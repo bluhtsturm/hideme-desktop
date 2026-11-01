@@ -1,0 +1,9 @@
+# Build-Ergebnisse (werden als GitHub-Release veröffentlicht)
+/build/
+/dist/
+__pycache__/
+*.pyc
+# Arch-Paketbau
+/packaging/arch/pkg/
+/packaging/arch/src/
+/packaging/arch/*.pkg.tar.*

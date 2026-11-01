@@ -1,0 +1,24 @@
+#!/bin/bash
+# Startet hide.me Desktop.
+SELF="$(readlink -f "$0")"
+PREFIX="$(dirname "$(dirname "$SELF")")"
+GROUP=hideme
+
+# Ist der Benutzer Mitglied der Gruppe "hideme", die aktuelle Sitzung kennt die
+# Mitgliedschaft aber noch nicht (z. B. direkt nach der Installation), wird die
+# App mit "sg" in dieser Gruppe gestartet – ein Ab- und Anmelden ist dann nicht nötig.
+if [ -z "$HIDEME_NO_SG" ] && command -v sg >/dev/null 2>&1; then
+    entry="$(getent group "$GROUP" 2>/dev/null)"
+    if [ -n "$entry" ]; then
+        gid="$(cut -d: -f3 <<<"$entry")"
+        if ! id -G | tr ' ' '\n' | grep -qx "$gid"; then
+            if cut -d: -f4 <<<"$entry" | tr ',' '\n' | grep -qx "$(id -un)"; then
+                export HIDEME_NO_SG=1
+                exec sg "$GROUP" -c "$(printf '%q ' "$SELF" "$@")"
+            fi
+        fi
+    fi
+fi
+
+export HIDEME_LAUNCHER="$SELF"
+exec python3 -I "$PREFIX/hideme_desktop/launch.py" "$@"

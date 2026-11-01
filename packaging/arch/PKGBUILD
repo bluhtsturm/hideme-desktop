@@ -1,0 +1,25 @@
+# Lokaler Paketbau für Arch Linux / Manjaro / EndeavourOS:  cd packaging/arch && makepkg -si
+pkgname=hideme-desktop
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Inoffizielle GTK-Oberfläche für den hide.me CLI VPN-Client (WireGuard)"
+arch=(x86_64 aarch64 armv7h)
+url="https://github.com/eventure/hide.client.linux"
+license=(GPL-2.0-only)
+depends=(python python-gobject gtk4 libadwaita polkit systemd)
+makedepends=(go)
+install=hideme-desktop.install
+options=(!debug !strip)
+
+_srcroot() { cd "$startdir/../.."; }
+
+build() {
+    _srcroot
+    ./build.sh
+}
+
+package() {
+    _srcroot
+    ./install.sh --package --destdir "$pkgdir" --bindir /usr/bin --datadir /usr/share \
+        --unitdir /usr/lib/systemd/system
+}

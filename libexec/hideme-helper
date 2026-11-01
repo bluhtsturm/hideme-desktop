@@ -1,0 +1,100 @@
+#!/usr/bin/python3 -I
+"""Root-Helfer für hide.me Desktop.
+
+Wird von systemd (ExecStartPre=… prepare) und per pkexec aus der App
+(update-doh) aufgerufen. Akzeptiert nur feste Befehle ohne freie Parameter.
+"""
+
+import json
+import os
+import subprocess
+import sys
+
+STATE_DIR = "/var/lib/hideme"
+CONFIG = os.path.join(STATE_DIR, "config.json")
+HERE = os.path.dirname(os.path.realpath(__file__))
+PREFIX = os.path.dirname(HERE)
+
+
+def find(name, candidates):
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    sys.exit(f"hideme-helper: {name} nicht gefunden")
+
+
+def binary():
+    return find("hide.me", [os.path.join(PREFIX, "bin", "hide.me"), os.path.join(HERE, "hide.me"),
+                            "/usr/lib/hideme-desktop/hide.me"])
+
+
+def ca_file():
+    return find("CA.pem", [os.path.join(PREFIX, "share", "CA.pem"), os.path.join(HERE, "CA.pem"),
+                           "/usr/share/hideme-desktop/CA.pem"])
+
+
+def prepare():
+    """Bereitet das Arbeitsverzeichnis des Daemons vor (läuft vor jedem Start)."""
+    os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
+    ca_link = os.path.join(STATE_DIR, "CA.pem")
+    target = ca_file()
+    if os.path.islink(ca_link) or not os.path.exists(ca_link):
+        if os.path.islink(ca_link) and os.readlink(ca_link) == target:
+            pass
+        else:
+            try:
+                os.unlink(ca_link)
+            except FileNotFoundError:
+                pass
+            os.symlink(target, ca_link)
+    cfg = {}
+    if os.path.exists(CONFIG):
+        try:
+            with open(CONFIG, encoding="utf-8") as fh:
+                cfg = json.load(fh)
+        except (OSError, ValueError):
+            os.replace(CONFIG, CONFIG + ".defekt")
+            print("hideme-helper: defekte config.json gesichert, starte mit Standardwerten", file=sys.stderr)
+            cfg = {}
+    # Die Steueradresse kommt immer aus der Kommandozeile (--caddr) der systemd-Unit
+    control = cfg.get("Control")
+    if isinstance(control, dict):
+        control.pop("address", None)
+        if not control:
+            cfg.pop("Control", None)
+    tmp = CONFIG + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh, indent="\t")
+    os.replace(tmp, CONFIG)
+
+
+def update_doh():
+    """Lädt die Liste öffentlicher DoH-Server (hide.me updateDoh)."""
+    os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
+    args = [binary()]
+    if os.path.exists(CONFIG):
+        args += ["-c", CONFIG]
+    args.append("updateDoh")
+    proc = subprocess.run(args, cwd=STATE_DIR, capture_output=True, text=True, timeout=240,
+                          env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin"})
+    output = (proc.stdout + proc.stderr).strip()
+    print(output)
+    if proc.returncode != 0 or "Resolvers updated" not in output:
+        sys.exit(1)
+
+
+def main():
+    if os.geteuid() != 0:
+        sys.exit("hideme-helper: muss als root laufen")
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    if cmd == "prepare":
+        prepare()
+    elif cmd == "update-doh":
+        update_doh()
+    else:
+        sys.exit("Verwendung: hideme-helper prepare|update-doh")
+
+
+if __name__ == "__main__":
+    main()

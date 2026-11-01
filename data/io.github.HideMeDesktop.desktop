@@ -1,0 +1,23 @@
+[Desktop Entry]
+Type=Application
+Name=hide.me VPN
+GenericName=VPN-Client
+Comment=hide.me VPN (WireGuard) verbinden und verwalten
+Exec=@BINDIR@/hideme-desktop
+Icon=io.github.HideMeDesktop
+Terminal=false
+Categories=Network;Security;GTK;
+Keywords=VPN;WireGuard;hide.me;Privacy;Datenschutz;Kill-Switch;SmartGuard;
+StartupNotify=true
+StartupWMClass=io.github.HideMeDesktop
+SingleMainWindow=true
+X-GNOME-UsesNotifications=true
+Actions=connect;disconnect;
+
+[Desktop Action connect]
+Name=Verbinden
+Exec=@BINDIR@/hideme-desktop --connect=
+
+[Desktop Action disconnect]
+Name=Trennen
+Exec=@BINDIR@/hideme-desktop --disconnect

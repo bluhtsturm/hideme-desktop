@@ -1,0 +1,13 @@
+post_install() {
+    systemd-sysusers hideme-desktop.conf
+    systemctl daemon-reload
+    echo ">> Daemon aktivieren:      sudo systemctl enable --now hideme-daemon.service"
+    echo ">> Steuerrechte erteilen:  sudo usermod -aG hideme \$USER   (danach neu anmelden)"
+}
+post_upgrade() {
+    systemctl daemon-reload
+    systemctl try-restart hideme-daemon.service || true
+}
+pre_remove() {
+    systemctl disable --now hideme-autoconnect.service hideme-daemon.service 2>/dev/null || true
+}

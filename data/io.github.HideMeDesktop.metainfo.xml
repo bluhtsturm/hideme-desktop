@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.HideMeDesktop</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-2.0-only</project_license>
+  <name>hide.me VPN</name>
+  <summary>Inoffizielle Desktop-Oberfläche für den hide.me CLI VPN-Client</summary>
+  <description>
+    <p>Grafische Oberfläche für den quelloffenen hide.me CLI-Client (WireGuard) mit allen Funktionen
+       der Kommandozeile: Serverauswahl, Kill-Switch, Split-Tunneling, SmartGuard-DNS-Filter,
+       Port-Forwarding, DNS-over-HTTPS, IPv4/IPv6-Steuerung, Tray-Symbol und Benachrichtigungen.</p>
+    <p>Kein offizielles Produkt der eVenture Ltd.</p>
+  </description>
+  <launchable type="desktop-id">io.github.HideMeDesktop.desktop</launchable>
+  <url type="homepage">https://github.com/eventure/hide.client.linux</url>
+  <categories>
+    <category>Network</category>
+    <category>Security</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.0.0" date="2026-11-01"/>
+  </releases>
+</component>

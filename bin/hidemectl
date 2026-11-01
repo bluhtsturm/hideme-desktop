@@ -1,0 +1,5 @@
+#!/bin/sh
+# Kommandozeilensteuerung des hide.me-Daemons (ohne grafische Oberfläche).
+SELF="$(readlink -f "$0")"
+PREFIX="$(dirname "$(dirname "$SELF")")"
+exec python3 -I "$PREFIX/hideme_desktop/launch.py" --ctl "$@"

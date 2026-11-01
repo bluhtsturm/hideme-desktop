@@ -1,0 +1,38 @@
+[Unit]
+Description=hide.me VPN-Daemon (hide.me CLI im Service-Modus für hide.me Desktop)
+Documentation=https://github.com/eventure/hide.client.linux
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=notify
+Environment=HIDEME_SOCKET=/run/hideme/hide.me.sock
+ExecStartPre=@PREFIX@/libexec/hideme-helper prepare
+ExecStart=@PREFIX@/bin/hide.me --caddr ${HIDEME_SOCKET} -c /var/lib/hideme/config.json service
+WorkingDirectory=/var/lib/hideme
+StateDirectory=hideme
+StateDirectoryMode=0700
+RuntimeDirectory=hideme
+RuntimeDirectoryMode=0750
+# Der Steuer-Socket gehört root:hideme (0770) – nur Mitglieder der Gruppe dürfen den Daemon steuern
+Group=hideme
+UMask=0007
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=3s
+ReadWritePaths=/etc -/run/systemd/resolve
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+PrivateTmp=true
+PrivateDevices=no
+SystemCallArchitectures=native
+SystemCallFilter=~@module
+SystemCallFilter=~@mount
+NoNewPrivileges=true
+LimitNOFILE=1024
+
+[Install]
+WantedBy=multi-user.target

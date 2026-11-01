@@ -1,0 +1,14 @@
+[Unit]
+Description=hide.me VPN beim Systemstart verbinden
+Documentation=https://github.com/eventure/hide.client.linux
+Requires=hideme-daemon.service
+After=hideme-daemon.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=@PREFIX@/bin/hidemectl --socket /run/hideme/hide.me.sock connect --retries 20
+
+[Install]
+WantedBy=multi-user.target
