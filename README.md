@@ -176,4 +176,4 @@ Struktur: `hideme_desktop/api.py` (REST-Client), `controller.py` (Zustand, Aktio
 `tray.py` (StatusNotifierItem + DBusMenu), `ui/` (Seiten und Dialoge), `ctl.py` (`hidemectl`),
 `libexec/hideme-helper` (Root-Helfer), `data/` (Units, Desktop-Datei, Icons, polkit).
 
-Lizenz: GPL-2.0 (siehe `LICENSE.md`) – wie der enthaltene hide.me-Client (`hide.client.linux/`).
+Lizenz: GPL-2.0 (siehe `LICENSE`) – wie der enthaltene hide.me-Client (`hide.client.linux/`).
