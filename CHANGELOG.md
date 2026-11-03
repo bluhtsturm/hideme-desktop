@@ -23,6 +23,9 @@ Fehlerbehebungen nach einer vollständigen Durchsicht.
 - `install.sh` startet den Daemon bei einer Aktualisierung neu und entfernt Reste älterer Versionen;
   das .deb startet ihn bei Aktualisierungen ebenfalls neu.
 - `build.sh` erkennt zu alte Go-Versionen (< 1.21) und nennt die Alternative (fertiges Programm aus dem Release).
+- Neues RPM-Paket für Fedora, openSUSE und RHEL-Derivate: Installationsskripte ohne distributionsspezifische
+  Makros, Abhängigkeiten für die Paketnamen beider Distributionen, Bau ohne Go mit vorhandenem `build/hide.me`.
+- `/usr/bin/hideme-desktop` und `/usr/bin/hidemectl` sind jetzt relative Verweise.
 
 **Oberfläche**
 - Kein falsches „VPN verbunden“ mehr bei jedem Start der App, keine doppelte Meldung bei Verbindungsabbruch.

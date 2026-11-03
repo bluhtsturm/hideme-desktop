@@ -30,6 +30,7 @@ für alle gängigen Linux-Desktops: GNOME, KDE Plasma, Xfce, Cinnamon, MATE, Bud
 Fertige Dateien gibt es unter [Releases](https://github.com/bluhtsturm/hideme-desktop/releases/latest):
 
 - `hideme-desktop_<Version>_amd64.deb` – Paket für Debian, Ubuntu, Linux Mint, Pop!_OS & Co.
+- `hideme-desktop-<Version>-1.x86_64.rpm` – Paket für Fedora, openSUSE und RHEL-Derivate
 - `hide.me-0.9.14-linux-amd64` – das hide.me-Programm (statisch gelinkt, aus dem mitgelieferten Quellcode gebaut)
 
 Debian/Ubuntu-basierte Systeme:
@@ -37,6 +38,19 @@ Debian/Ubuntu-basierte Systeme:
 ```bash
 sudo apt install ./hideme-desktop_*_amd64.deb
 ```
+
+Fedora bzw. openSUSE:
+
+```bash
+sudo dnf install ./hideme-desktop-*.x86_64.rpm
+```
+
+```bash
+sudo zypper install ./hideme-desktop-*.x86_64.rpm
+```
+
+Danach einmal ab- und wieder anmelden (oder `sudo usermod -aG hideme $USER`, falls die Paketinstallation
+den Benutzer nicht erkennen konnte), damit die App den Daemon steuern darf.
 
 Alle anderen Distributionen (oder ohne Paket):
 

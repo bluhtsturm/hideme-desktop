@@ -157,8 +157,9 @@ cp -r "$SRC/data/icons" "$D$PREFIX/data/icons"
 find "$D$PREFIX/data/icons" -type d -exec chmod 0755 {} + ; find "$D$PREFIX/data/icons" -type f -exec chmod 0644 {} +
 
 install -d -m 0755 "$D$BINDIR"
-ln -sf "$PREFIX/bin/hideme-desktop" "$D$BINDIR/hideme-desktop"
-ln -sf "$PREFIX/bin/hidemectl" "$D$BINDIR/hidemectl"
+# relative Verweise (z. B. ../../opt/hideme-desktop/bin/…): funktionieren auch innerhalb von DESTDIR
+ln -sfr "$D$PREFIX/bin/hideme-desktop" "$D$BINDIR/hideme-desktop"
+ln -sfr "$D$PREFIX/bin/hidemectl" "$D$BINDIR/hidemectl"
 
 install -d -m 0755 "$D$DATADIR/applications" "$D$DATADIR/metainfo"
 sed "s|@BINDIR@|$BINDIR|g" "$SRC/data/$APP_ID.desktop" > "$D$DATADIR/applications/$APP_ID.desktop"
