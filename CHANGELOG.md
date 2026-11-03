@@ -10,7 +10,7 @@ um die die App jetzt herumarbeitet.
   (Host `api.hide.me`, Port 443, leere CA, API-Version `v1`). Die App lädt die Serverliste jetzt direkt von
   api.hide.me und repariert eine bereits beschädigte Konfiguration automatisch; `hidemectl connect` ebenso.
 - **Öffentliche IP fehlte bei bestehender Verbindung:** Der Daemon fragt dafür fest eingestellte hide.me-DNS-Server
-  ab, die nicht antworten. Die App fragt die Adresse bei bestehender Verbindung jetzt selbst durch den Tunnel ab;
+  ab, die durch den Tunnel nicht antworten (außerhalb des Tunnels schon). Die App fragt die Adresse bei bestehender Verbindung jetzt selbst durch den Tunnel ab;
   `hidemectl ip` ebenso.
 - Der Mock-Daemon bildet beide Fehler nach, die Tests (API, Oberfläche, echter Daemon) prüfen die Umgehungen.
 

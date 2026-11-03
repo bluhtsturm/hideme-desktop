@@ -155,8 +155,8 @@ hidemectl config '{"WireGuard":{"LeakProtection":true}}'
   API-Version der hide.me-Schnittstelle; danach scheitern Anmeldung und Verbindung mit
   „tls: no application protocol“. Die App lädt die Serverliste deshalb direkt von api.hide.me und repariert eine
   so beschädigte Konfiguration automatisch.
-- **IP-Abfrage bei bestehender Verbindung:** Der Daemon fragt dafür fest eingestellte DNS-Server, die nicht
-  antworten. Die App ermittelt die öffentliche IP bei bestehender Verbindung selbst durch den Tunnel.
+- **IP-Abfrage bei bestehender Verbindung:** Der Daemon fragt dafür fest eingestellte DNS-Server, die durch den Tunnel nicht
+  antworten (außerhalb des Tunnels schon). Die App ermittelt die öffentliche IP bei bestehender Verbindung selbst durch den Tunnel.
 - **`hide.me categories` scheitert mit „bad public key PIN“:** Der hide.me-Server verwendet inzwischen ein
   Zertifikat der Zwischenstelle *DigiCert Global G2 TLS RSA SHA256 2020 CA1*, die CLI pinnt noch die
   ältere *DigiCert TLS RSA SHA256 2020 CA1*. Die App lädt die Kategorienliste deshalb direkt per HTTPS

@@ -8,7 +8,7 @@ Zwei Funktionen des hide.me-Daemons (CLI 0.9.14) sind dafür ungeeignet:
   ``rest.New(s.connection.Config.Rest)``), und ``FetchServerList`` ändert diese
   (rest/client.go). Danach scheitern Anmeldung und Verbindungsaufbau.
 * ``/externalIps`` fragt bei bestehender Verbindung die fest eingestellten
-  hide.me-DNS-Server ab, die nicht antworten – die Abfrage liefert dann keine Adressen.
+  hide.me-DNS-Server ab, die durch den Tunnel nicht antworten – die Abfrage liefert dann keine Adressen.
 
 Für Tests lassen sich die Adressen über Umgebungsvariablen umleiten (auch auf file://).
 """

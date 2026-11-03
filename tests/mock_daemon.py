@@ -167,7 +167,7 @@ class Daemon:
             time.sleep(0.8)
             connected = self.state["code"] == "connected"
             # Wie der echte Daemon: Bei bestehender Verbindung fragt er fest eingestellte hide.me-DNS-Server,
-            # die nicht antworten – das Ereignis kommt dann ohne Adressen.
+            # durch den Tunnel nicht antworten – das Ereignis kommt dann ohne Adressen.
             ip4 = None if connected else "93.184.216.34"
             ip6 = None if connected else "2a02:908:1:2::34"
             with self.lock:
