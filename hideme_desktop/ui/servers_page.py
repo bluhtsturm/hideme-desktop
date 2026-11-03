@@ -203,7 +203,7 @@ class ServersView(Gtk.Box):
                 self.stack.set_visible_child_name("loading")
             else:
                 self.error_page.set_description(self.ctl.servers_error or
-                                                "Die Serverliste konnte nicht vom Daemon abgerufen werden.")
+                                                "Die Serverliste konnte nicht von api.hide.me geladen werden.")
                 self.stack.set_visible_child_name("error")
             return
         self.stack.set_visible_child_name("list")

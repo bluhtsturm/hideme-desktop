@@ -5,7 +5,7 @@
 %global debug_package %{nil}
 %global __brp_strip %{nil}
 %global __brp_strip_comment_note %{nil}
-%{!?app_version:%global app_version 1.0.1}
+%{!?app_version:%global app_version 1.0.2}
 %{!?_unitdir:%global _unitdir /usr/lib/systemd/system}
 # Dokumentation wie bei Fedora/openSUSE unter /usr/share/doc/hideme-desktop (ohne Versionsnummer)
 %global _docdir_fmt %{name}
@@ -92,6 +92,8 @@ fi
 /usr/lib/sysusers.d/hideme-desktop.conf
 
 %changelog
+* Tue Nov 03 2026 hide.me Desktop (inoffiziell) <root@localhost> - 1.0.2-1
+- Umgehung zweier Fehler im hide.me-Daemon 0.9.14 (Serverliste, IP-Abfrage), siehe CHANGELOG.md
 * Tue Nov 03 2026 hide.me Desktop (inoffiziell) <root@localhost> - 1.0.1-1
 - Fehlerbehebungen nach vollständiger Durchsicht, siehe CHANGELOG.md
 * Sun Nov 01 2026 hide.me Desktop (inoffiziell) <root@localhost> - 1.0.0-1

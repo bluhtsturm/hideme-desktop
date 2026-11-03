@@ -22,6 +22,7 @@ sys.path.insert(0, ROOT)
 from hideme_desktop import api as A  # noqa: E402
 from hideme_desktop import cli  # noqa: E402
 from hideme_desktop import config as C  # noqa: E402
+from hideme_desktop import netinfo  # noqa: E402
 
 BIN = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "build", "hide.me"))
 os.environ["HIDEME_BIN"] = BIN
@@ -100,7 +101,7 @@ try:
     check("Zustand danach wieder clean", c.state().get("code") == "clean", c.state().get("code"))
 
     try:
-        servers = c.server_list(timeout=60)
+        servers = netinfo.fetch_server_list()  # wie die App: direkt von api.hide.me
         check("Serverliste geladen", isinstance(servers, list) and len(servers) > 5, str(type(servers)))
         sample = servers[0]
         keys = set(sample)
@@ -110,9 +111,28 @@ try:
         total = sum(1 + len(s.get("children") or []) for s in servers)
         free = [C.short_name(s["hostname"]) for s in servers if "free" in (s.get("tags") or [])]
         print(f"       {len(servers)} Standorte, {total} Einträge, kostenlos: {', '.join(free[:8])}")
-        print(f"       Beispiel: {json.dumps(sample)[:260]}")
-    except A.ApiError as e:
-        check("Serverliste geladen", False, e.message)
+    except (OSError, ValueError) as e:
+        check("Serverliste geladen", False, str(e))
+
+    # Bekannter Fehler im hide.me-Daemon 0.9.14: /serverList überschreibt die REST-Konfiguration.
+    # Die App ruft /serverList nicht auf; hier wird geprüft, dass ihre Reparatur das Ergebnis behebt.
+    before = c.get_configuration()["Rest"]
+    check("Ausgangskonfiguration intakt", C.repair_patch({"Rest": before}) is None,
+          json.dumps({k: before.get(k) for k in ("Host", "Port", "CA", "APIVersion")}))
+    c.request("GET", "/serverList", timeout=60)
+    broken = c.get_configuration()
+    fix = C.repair_patch(broken, "nl")
+    if fix:
+        print("       hide.me-Fehler nachgewiesen: /serverList setzt "
+              + json.dumps({k: broken["Rest"].get(k) for k in ("Host", "Port", "CA", "APIVersion")}))
+        c.set_configuration(fix)
+        after = c.get_configuration()["Rest"]
+        check("Reparatur stellt die Konfiguration des echten Daemons wieder her",
+              C.repair_patch({"Rest": after}) is None and after["Port"] == 432 and after["CA"] == "CA.pem"
+              and after["APIVersion"] == "v1.0.0" and after["Host"] == "nl.hideservers.net",
+              json.dumps({k: after.get(k) for k in ("Host", "Port", "CA", "APIVersion")}))
+    else:
+        print("       Hinweis: /serverList hat die Konfiguration nicht verändert – Fehler im hide.me-Client behoben?")
 
     c.external_ips()
     deadline = time.time() + 15

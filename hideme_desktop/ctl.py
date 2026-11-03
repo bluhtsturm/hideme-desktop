@@ -13,6 +13,7 @@ import time
 from . import DEFAULT_SOCKET, VERSION
 from . import api as A
 from . import config as C
+from . import netinfo
 
 
 def _print_state(st):
@@ -32,6 +33,11 @@ def _print_state(st):
 
 
 def cmd_connect(client, args):
+    # Eine vom Daemon selbst beschädigte REST-Konfiguration zuerst reparieren (siehe netinfo)
+    fix = C.repair_patch(client.get_configuration(), args.server or "")
+    if fix:
+        print("Repariere die Daemon-Konfiguration (Port/CA/API-Version) …", file=sys.stderr)
+        client.set_configuration(fix)
     if args.server:
         client.set_configuration({"Rest": {"Host": C.fqdn(args.server)}})
     attempts = max(1, args.retries + 1)
@@ -104,10 +110,18 @@ def main(argv=None):
                         print(f"{'  ' * depth}{loc.get('displayName', ''):<30} {C.short_name(loc.get('hostname')):<20} "
                               f"{','.join(tags)}")
                     walk(loc.get("children") or [], depth + 1)
-            walk(client.server_list())
+            try:
+                walk(netinfo.fetch_server_list())  # nicht über den Daemon, siehe netinfo
+            except (OSError, ValueError) as e:
+                print(f"Fehler: Serverliste nicht abrufbar: {e}", file=sys.stderr)
+                return 1
         elif args.cmd == "watch":
             for ev in client.watch():
                 print(json.dumps(ev), flush=True)
+        elif args.cmd == "ip" and client.state().get("code") == A.CONNECTED:
+            ip4, ip6 = netinfo.public_ips()  # durch den Tunnel, siehe netinfo
+            print(f"IPv4: {ip4 or '–'}")
+            print(f"IPv6: {ip6 or '–'}")
         elif args.cmd == "ip":
             stream = client.watch()
             time.sleep(0.3)  # dem Daemon Zeit geben, den Beobachter zu registrieren

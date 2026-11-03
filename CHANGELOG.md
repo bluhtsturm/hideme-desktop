@@ -1,5 +1,19 @@
 # Änderungen
 
+## 1.0.2
+
+Ergebnis des ersten Praxistests mit echter VPN-Verbindung: zwei Fehler im hide.me-Daemon (CLI 0.9.14),
+um die die App jetzt herumarbeitet.
+
+- **Anmeldung und Verbindungsaufbau scheiterten** mit „tls: no application protocol“: Ruft man die Serverliste
+  über den Daemon ab (`/serverList`), überschreibt dieser dauerhaft seine eigene REST-Konfiguration
+  (Host `api.hide.me`, Port 443, leere CA, API-Version `v1`). Die App lädt die Serverliste jetzt direkt von
+  api.hide.me und repariert eine bereits beschädigte Konfiguration automatisch; `hidemectl connect` ebenso.
+- **Öffentliche IP fehlte bei bestehender Verbindung:** Der Daemon fragt dafür fest eingestellte hide.me-DNS-Server
+  ab, die nicht antworten. Die App fragt die Adresse bei bestehender Verbindung jetzt selbst durch den Tunnel ab;
+  `hidemectl ip` ebenso.
+- Der Mock-Daemon bildet beide Fehler nach, die Tests (API, Oberfläche, echter Daemon) prüfen die Umgehungen.
+
 ## 1.0.1
 
 Fehlerbehebungen nach einer vollständigen Durchsicht.

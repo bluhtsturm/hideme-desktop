@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Testet den API-Client gegen den Mock-Daemon (ohne GTK)."""
+import json
 import os
 import subprocess
 import sys
@@ -48,7 +49,16 @@ try:
     assert st["rx"] > 0
     c.external_ips()
     time.sleep(1.2)
-    assert c.server_list()[0]["hostname"] == "nl-v4.hideservers.net"
+    # Wie hide.me 0.9.14: /serverList beschädigt die REST-Konfiguration – die Reparatur muss das erkennen
+    assert C.repair_patch(c.get_configuration(), "amsterdam") is None
+    c.request("GET", "/serverList")
+    fix = C.repair_patch(c.get_configuration(), "amsterdam")
+    assert fix == {"Rest": {"Port": 432, "APIVersion": "v1.0.0", "CA": "CA.pem",
+                            "Host": "amsterdam.hideservers.net"}}, fix
+    c.set_configuration(fix)
+    assert C.repair_patch(c.get_configuration()) is None
+    assert C.repair_patch({"Rest": {"Host": "nl.hideservers.net", "Port": 432, "CA": "CA.pem",
+                                    "APIVersion": "v1"}}) == {"Rest": {"Port": 432, "APIVersion": "v1.0.0"}}
     assert "Conn: Connected" in c.log()
     c.destroy()
     assert c.state()["code"] == "clean"
@@ -69,6 +79,20 @@ try:
     assert C.duration_go(90 * C.NS) == "1m30s"
     assert C.patch_needs_reroute({"WireGuard": {"LeakProtection": False}})
     assert not C.patch_needs_reroute({"Rest": {"Filter": {"ads": True}}})
+    # Direkte Abfragen (Serverliste, IP) über umgeleitete Adressen
+    tmp = tempfile.mkdtemp()
+    with open(os.path.join(tmp, "servers.json"), "w") as fh:
+        json.dump([{"hostname": "nl-v4.hideservers.net", "displayName": "Netherlands", "tags": []}], fh)
+    with open(os.path.join(tmp, "ip4"), "w") as fh:
+        fh.write("185.212.170.10\n")
+    with open(os.path.join(tmp, "ip6"), "w") as fh:
+        fh.write("kein-ip-text")
+    os.environ["HIDEME_SERVERLIST_URL"] = "file://" + os.path.join(tmp, "servers.json")
+    os.environ["HIDEME_IPCHECK_V4"] = "file://" + os.path.join(tmp, "ip4")
+    os.environ["HIDEME_IPCHECK_V6"] = "file://" + os.path.join(tmp, "ip6")
+    from hideme_desktop import netinfo
+    assert netinfo.fetch_server_list()[0]["hostname"] == "nl-v4.hideservers.net"
+    assert netinfo.public_ips() == ("185.212.170.10", None), netinfo.public_ips()
     assert C.patch_needs_reconnect({"Rest": {"Filter": {"ads": True}}})
     assert not C.patch_needs_reconnect({"WireGuard": {"DpdTimeout": 1}, "Rest": {"ReconnectWait": 1}})
     try:

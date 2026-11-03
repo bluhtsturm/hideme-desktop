@@ -217,6 +217,26 @@ def patch_needs_reconnect(patch):
     return False
 
 
+def repair_patch(cfg, last_server=""):
+    """Erkennt die durch /serverList des Daemons (hide.me CLI 0.9.14) beschädigte REST-Konfiguration.
+
+    Der Daemon setzt dabei dauerhaft Host=api.hide.me, Port=443, CA="" und APIVersion="v1";
+    Anmeldung und Verbindungsaufbau scheitern dann ("tls: no application protocol").
+    Liefert eine Teilkonfiguration zur Korrektur oder None.
+    """
+    rest = (cfg or {}).get("Rest") or {}
+    host, port, ca, api = rest.get("Host"), rest.get("Port"), rest.get("CA"), rest.get("APIVersion")
+    broken = host == "api.hide.me" or (port == 443 and not ca) or (api == "v1" and port != 443)
+    if not broken:
+        return None
+    fix = {"Port": DEFAULTS["Rest"]["Port"], "APIVersion": "v1.0.0"}
+    if not ca:
+        fix["CA"] = DEFAULTS["Rest"]["CA"]
+    if host == "api.hide.me":
+        fix["Host"] = fqdn(last_server) if last_server else ""
+    return {"Rest": fix}
+
+
 def patch_needs_reroute(patch):
     for section, fields in REROUTE_FIELDS.items():
         if section not in patch:

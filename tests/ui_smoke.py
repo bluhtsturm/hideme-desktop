@@ -26,6 +26,20 @@ with open(os.path.join(OUT, "config", "hideme-desktop", "settings.json"), "w") a
     json.dump({"control_address": SOCK, "show_tray": True, "notifications": True,
                "favorites": ["amsterdam", "frankfurt"], "last_server": "amsterdam"}, fh)
 
+# Serverliste und IP-Prüfdienst lokal bereitstellen (die App fragt beides direkt ab, nicht über den Daemon)
+sys.path.insert(0, os.path.join(ROOT, "tests"))
+from mock_daemon import SERVERS  # noqa: E402
+
+NET = os.path.join(OUT, "net")
+os.makedirs(NET, exist_ok=True)
+VPN_IP4, VPN_IP6 = "185.212.170.10", "2a00:1234:5678::a"
+for name, content in (("servers.json", json.dumps(SERVERS)), ("ip4", VPN_IP4), ("ip6", VPN_IP6)):
+    with open(os.path.join(NET, name), "w") as fh:
+        fh.write(content)
+os.environ["HIDEME_SERVERLIST_URL"] = "file://" + os.path.join(NET, "servers.json")
+os.environ["HIDEME_IPCHECK_V4"] = "file://" + os.path.join(NET, "ip4")
+os.environ["HIDEME_IPCHECK_V6"] = "file://" + os.path.join(NET, "ip6")
+
 import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
@@ -33,6 +47,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from hideme_desktop import api as A  # noqa: E402
+from hideme_desktop import config as C  # noqa: E402
 from hideme_desktop.main import Application  # noqa: E402
 
 errors = []
@@ -72,6 +87,8 @@ menu_layout = {}
 
 app = Application()
 raw = A.ControlClient(SOCK)
+# Ausgangslage wie nach dem Fehler des echten Daemons: beschädigte REST-Konfiguration
+raw.set_configuration({"Rest": {"Host": "api.hide.me", "Port": 443, "CA": "", "APIVersion": "v1"}})
 
 
 def check(name, cond, detail=""):
@@ -108,6 +125,10 @@ def s_start():
     check("Daemon erreichbar", ctl.available, ctl.unavailable_reason)
     check("Konfiguration geladen", ctl.config is not None)
     check("Serverliste geladen", len(ctl.servers) > 0)
+    rest = raw.get_configuration()["Rest"]
+    check("Beschädigte Daemon-Konfiguration repariert (und nicht erneut beschädigt)",
+          C.repair_patch({"Rest": rest}) is None and rest["Host"] == "amsterdam.hideservers.net",
+          json.dumps({k: rest[k] for k in ("Host", "Port", "CA", "APIVersion")}))
     check("Kein Token", ctl.has_token is False)
     check("Tray registriert", app.tray is not None and app.tray.available and registered_items, str(registered_items))
     shot(app.window, "01-start")
@@ -175,7 +196,8 @@ def s_connected():
     ctl = app.controller
     check("Verbunden", ctl.code == A.CONNECTED, ctl.code)
     check("Server amsterdam", "amsterdam" in ctl.current_host, ctl.current_host)
-    check("Externe IP ermittelt", bool(ctl.ext_ip4), str(ctl.ext_ip4))
+    check("Öffentliche IP bei Verbindung direkt ermittelt", (ctl.ext_ip4, ctl.ext_ip6) == (VPN_IP4, VPN_IP6),
+          f"{ctl.ext_ip4} {ctl.ext_ip6}")
     sv = app.window.status_view
     check("Statusseite zeigt 'Geschützt'", sv.title.get_text() == "Geschützt", sv.title.get_text())
     check("Details sichtbar", sv.details.get_visible())

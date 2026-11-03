@@ -210,13 +210,8 @@ class ControlClient:
             raise ApiError(f"HTTP {status}", status=status)
         return payload.decode("utf-8", "replace")
 
-    def server_list(self, timeout=100):
-        status, _c, payload = self.request("GET", "/serverList", timeout=timeout)
-        if status == 409:
-            raise Busy("Der Daemon ist gerade beschäftigt", "busy", status)
-        if status != 200:
-            raise ApiError(payload.decode("utf-8", "replace").strip() or f"HTTP {status}", status=status)
-        return json.loads(payload.decode("utf-8"))
+    # /serverList wird bewusst nicht angeboten: In hide.me 0.9.14 überschreibt der Abruf dauerhaft
+    # die REST-Konfiguration des Daemons (siehe netinfo.py). Die Liste kommt direkt von api.hide.me.
 
     def external_ips(self):
         status, _c, payload = self.request("GET", "/externalIps", timeout=10)

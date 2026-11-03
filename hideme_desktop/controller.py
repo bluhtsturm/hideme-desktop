@@ -17,6 +17,7 @@ from gi.repository import GLib, GObject
 
 from . import api as A
 from . import config as C
+from . import netinfo
 from .settings import cache_dir
 
 POLL_INTERVAL_MS = 1500
@@ -110,6 +111,7 @@ class Controller(GObject.Object):
         self.servers_loading = False
         self.last_error = None
         self.cancel_requested = False
+        self._repairing = False
         self._autoconnect_pending = False
         self._have_state = False
 
@@ -507,6 +509,8 @@ class Controller(GObject.Object):
             self._apply_state(merged)
             self.poll_now()
         elif code == A.EXTERNAL_IPS:
+            if self.code == A.CONNECTED and not (ev.get("external_ip") or ev.get("external_ipv6")):
+                return  # leere Antwort des Daemons (siehe netinfo) – eigenes Ergebnis behalten
             self.ext_ip_checking = False
             self.ext_ip4 = ev.get("external_ip") or None
             self.ext_ip6 = ev.get("external_ipv6") or None
@@ -532,6 +536,7 @@ class Controller(GObject.Object):
                 self.config = cfg
                 self.emit("config-changed")
                 self.emit("changed")
+                self._repair_config(cfg)
 
         def failed(_exc):
             self._config_fetch_inflight = False
@@ -539,6 +544,19 @@ class Controller(GObject.Object):
                 GLib.timeout_add_seconds(2, lambda: (self.refresh_config(), False)[1])
 
         self.run_bg(api.get_configuration, done, failed)
+
+    def _repair_config(self, cfg):
+        """Repariert eine durch den hide.me-Daemon selbst beschädigte REST-Konfiguration (siehe netinfo)."""
+        patch = C.repair_patch(cfg, self.settings["last_server"])
+        if not patch or self._repairing:
+            return
+        self._repairing = True
+
+        def done():
+            self._repairing = False
+            self.emit("notice", "Die Daemon-Konfiguration war durch einen Fehler des hide.me-Clients verändert "
+                                "und wurde repariert.")
+        self.update_config(patch, quiet=True, on_done=done)
 
     def update_config(self, patch, quiet=False, on_done=None):
         """Sendet eine (Teil-)Konfiguration an den Daemon und speichert sie dort."""
@@ -562,6 +580,7 @@ class Controller(GObject.Object):
             self.emit("changed")
 
         def failed(exc):
+            self._repairing = False
             self._report_error("Einstellung konnte nicht übernommen werden", exc)
             self.refresh_config()
 
@@ -626,19 +645,13 @@ class Controller(GObject.Object):
             R(api.set_configuration, {"Rest": {"Host": host}})
             if dirty and code == A.ROUTED:
                 R(api.destroy)
-            result = R(api.connect, timeout=timeout)
-            try:
-                R(api.external_ips, attempts=3)
-            except A.ApiError:
-                pass
-            return result
+            return R(api.connect, timeout=timeout)
 
         def done(result):
             self.pending_changes = False
-            self.ext_ip_checking = True
-            GLib.timeout_add_seconds(20, self._ext_ip_timeout)
             if isinstance(result, dict):
                 self._apply_state(result)
+            self.check_external_ip(quiet=True)
 
         def failed(exc):
             self._dirty = self._dirty or dirty
@@ -761,6 +774,17 @@ class Controller(GObject.Object):
         self.ext_ip4 = self.ext_ip6 = None
         self.emit("changed")
 
+        if self.code == A.CONNECTED:
+            # Der Daemon fragt dafür DNS-Server ab, die nicht antworten – direkt durch den Tunnel fragen
+            def got(ips):
+                self.ext_ip_checking = False
+                self.ext_ip4, self.ext_ip6 = ips
+                self.emit("changed")
+                if not quiet and not any(ips):
+                    self.emit("notice", "Die öffentliche IP-Adresse konnte nicht ermittelt werden.")
+            self.run_bg(netinfo.public_ips, got, lambda _e: got((None, None)))
+            return
+
         def failed(exc):
             self.ext_ip_checking = False
             self.emit("changed")
@@ -878,10 +902,9 @@ class Controller(GObject.Object):
         self.servers_loading = True
         self.servers_error = None
         self.emit("servers-changed")
-        api = self.api
 
         def work():
-            return R(api.server_list, attempts=10)
+            return netinfo.fetch_server_list()
 
         def done(data):
             self.servers_loading = False
@@ -897,7 +920,7 @@ class Controller(GObject.Object):
 
         def failed(exc):
             self.servers_loading = False
-            self.servers_error = exc.message if isinstance(exc, A.ApiError) else str(exc)
+            self.servers_error = f"Die Serverliste konnte nicht von api.hide.me geladen werden: {exc}"
             self.emit("servers-changed")
         self.run_bg(work, done, failed)
 

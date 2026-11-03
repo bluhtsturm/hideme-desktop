@@ -108,10 +108,20 @@ class Daemon:
             else:
                 target[k] = v
 
+    def rest_error(self, method):
+        """Wie der echte Client: mit beschädigter REST-Konfiguration scheitert jede Anfrage."""
+        rest = self.config["Rest"]
+        if rest["Port"] != 432 or rest["APIVersion"] != "v1.0.0" or not rest["CA"]:
+            return (f'Post "https://45.144.196.9:{rest["Port"]}/{rest["APIVersion"]}/{method}": '
+                    f'remote error: tls: no application protocol')
+        return None
+
     def connect(self):
         host = self.config["Rest"]["Host"]
         if not self.config["Rest"]["AccessToken"]:
             raise RuntimeError("no Access-Token")
+        if self.rest_error("connect"):
+            raise RuntimeError(self.rest_error("connect"))
         self.log(f"Conn: Connecting in 0s")
         self.set_code("connecting")
         self.notify({"code": "dns lookup", "timestamp": now_go()})
@@ -156,15 +166,18 @@ class Daemon:
         def run():
             time.sleep(0.8)
             connected = self.state["code"] == "connected"
-            ip4 = "185.212.170.%d" % random.randint(2, 250) if connected else "93.184.216.34"
-            ip6 = "2a00:1234:5678::%x" % random.randint(1, 4000) if connected else None
+            # Wie der echte Daemon: Bei bestehender Verbindung fragt er fest eingestellte hide.me-DNS-Server,
+            # die nicht antworten – das Ereignis kommt dann ohne Adressen.
+            ip4 = None if connected else "93.184.216.34"
+            ip6 = None if connected else "2a02:908:1:2::34"
             with self.lock:
-                self.state["external_ip"] = ip4
+                if ip4:
+                    self.state["external_ip"] = ip4
                 if ip6:
                     self.state["external_ipv6"] = ip6
                 st = dict(self.state)
             st["code"] = "external ips"
-            self.log(f"ExIP: Retrieved {ip4}")
+            self.log(f"ExIP: Retrieved {ip4}" if ip4 else "ExIp: [ERR] DNS failed: i/o timeout")
             self.notify(st)
         threading.Thread(target=run, daemon=True).start()
 
@@ -294,7 +307,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 D.notify({"code": "token update done", "timestamp": now_go()})
                 return self._result("bmV1ZXNUb2tlbg==")
             if path == "/serverList":
+                # Wie hide.me 0.9.14 (control/methods.go + rest/client.go): Der Abruf überschreibt
+                # dauerhaft die REST-Konfiguration des Daemons.
                 time.sleep(0.4)
+                D.config["Rest"].update({"Host": "api.hide.me", "Port": 443, "CA": "", "APIVersion": "v1"})
                 return self._send(200, json.dumps(SERVERS))
             if path == "/externalIps":
                 D.external_ips()
@@ -325,6 +341,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._result(error=("token", "no username"))
                 if data.get("Password") == "falsch":
                     return self._result(error=("token", "bad HTTP status 401"))
+                if D.rest_error("accessToken"):
+                    return self._result(error=("token", D.rest_error("accessToken")))
                 D.notify({"code": "token update", "timestamp": now_go()})
                 D.notify({"code": "token update done", "timestamp": now_go()})
                 return self._result("dG9rZW4tZnVlci0" + data["Username"].encode().hex())
