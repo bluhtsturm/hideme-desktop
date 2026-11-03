@@ -155,14 +155,17 @@ hidemectl config '{"WireGuard":{"LeakProtection":true}}'
   API-Version der hide.me-Schnittstelle; danach scheitern Anmeldung und Verbindung mit
   „tls: no application protocol“. Die App lädt die Serverliste deshalb direkt von api.hide.me und repariert eine
   so beschädigte Konfiguration automatisch.
+  Bei hide.me gemeldet: [#61](https://github.com/eventure/hide.client.linux/issues/61).
 - **IP-Abfrage bei bestehender Verbindung:** Der Daemon fragt dafür fest eingestellte DNS-Server, die durch den Tunnel nicht
   antworten (außerhalb des Tunnels schon). Die App ermittelt die öffentliche IP bei bestehender Verbindung selbst durch den Tunnel.
+  Bei hide.me gemeldet: [#63](https://github.com/eventure/hide.client.linux/issues/63).
 - **`hide.me categories` scheitert mit „bad public key PIN“:** Der hide.me-Server verwendet inzwischen ein
   Zertifikat der Zwischenstelle *DigiCert Global G2 TLS RSA SHA256 2020 CA1*, die CLI pinnt noch die
   ältere *DigiCert TLS RSA SHA256 2020 CA1*. Die App lädt die Kategorienliste deshalb direkt per HTTPS
   mit regulärer Zertifikatsprüfung (`*.hideservers.net`, eVenture Limited) und nutzt die CLI nur als
   Rückfall. Verbindungsaufbau und Token-Anfragen sind nicht betroffen – sie laufen über Port 432 mit
   der eigenen hide.me-CA (`CA.pem`).
+  Bei hide.me gemeldet: [#62](https://github.com/eventure/hide.client.linux/issues/62).
 
 ## Sicherheit
 
