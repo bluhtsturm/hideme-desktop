@@ -1,6 +1,6 @@
 # Lokaler Paketbau für Arch Linux / Manjaro / EndeavourOS:  cd packaging/arch && makepkg -si
 pkgname=hideme-desktop
-pkgver=1.0.0
+pkgver=1.0.1
 pkgrel=1
 pkgdesc="Inoffizielle GTK-Oberfläche für den hide.me CLI VPN-Client (WireGuard)"
 arch=(x86_64 aarch64 armv7h)

@@ -144,6 +144,7 @@ fi
 # --------------------------------------------------------------------------- Dateien
 D="$DESTDIR"
 info "Installiere nach $D$PREFIX"
+rm -rf "$D$PREFIX/hideme_desktop"  # Reste älterer Versionen entfernen
 install -d -m 0755 "$D$PREFIX"/{bin,libexec,share,hideme_desktop/ui,data}
 install -m 0644 "$SRC"/hideme_desktop/*.py "$D$PREFIX/hideme_desktop/"
 install -m 0644 "$SRC"/hideme_desktop/ui/*.py "$SRC/hideme_desktop/ui/style.css" "$D$PREFIX/hideme_desktop/ui/"
@@ -216,8 +217,16 @@ if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
         warn "Diese nutzen dieselbe Schnittstelle 'vpn'. Bitte beenden: systemctl disable --now $running"
     fi
     systemctl daemon-reload
-    info "Starte den hide.me-Daemon (hideme-daemon.service)"
-    systemctl enable --now hideme-daemon.service || warn "Der Daemon konnte nicht gestartet werden: journalctl -u hideme-daemon"
+    systemctl enable hideme-daemon.service
+    if systemctl is-active --quiet hideme-daemon.service; then
+        # Aktualisierung: neue Programmversion laden. Eine bestehende VPN-Verbindung wird dabei
+        # getrennt; die App verbindet automatisch neu, wenn sie verbunden war.
+        info "Starte den hide.me-Daemon neu (hideme-daemon.service)"
+        systemctl restart hideme-daemon.service || warn "Neustart fehlgeschlagen: journalctl -u hideme-daemon"
+    else
+        info "Starte den hide.me-Daemon (hideme-daemon.service)"
+        systemctl start hideme-daemon.service || warn "Der Daemon konnte nicht gestartet werden: journalctl -u hideme-daemon"
+    fi
 else
     warn "systemd wurde nicht gefunden. Den Daemon bitte selbst als root starten:"
     warn "  cd /var/lib/hideme && $PREFIX/bin/hide.me --caddr /run/hideme/hide.me.sock -c /var/lib/hideme/config.json service"
@@ -234,6 +243,7 @@ if [ -n "$INVOKING_USER" ]; then
     echo "    Hinweis: Die Gruppenmitgliedschaft gilt nach dem nächsten Anmelden; bis dahin startet"
     echo "    hideme-desktop sich automatisch mit den passenden Rechten (über 'sg')."
 fi
-if [ "${XDG_CURRENT_DESKTOP:-}" != "" ] && [[ "${XDG_CURRENT_DESKTOP}" == *GNOME* ]]; then
+# sudo setzt XDG_CURRENT_DESKTOP meist zurück – daher auf installierte GNOME Shell prüfen
+if command -v gnome-shell >/dev/null 2>&1; then
     echo "    GNOME: Für das Tray-Symbol wird die Erweiterung „AppIndicator and KStatusNotifierItem Support“ benötigt."
 fi

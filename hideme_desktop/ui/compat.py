@@ -4,6 +4,8 @@ Neuere Widgets (SwitchRow, SpinRow, AlertDialog, PreferencesDialog, …) werden
 genutzt, wenn vorhanden – sonst wird ein gleichwertiger Ersatz zusammengesetzt.
 """
 
+import time
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -109,6 +111,7 @@ class EntryRow:
     def __init__(self, title, text="", on_apply=None, password=False, placeholder=""):
         self._quiet = _Silent()
         self.on_apply = on_apply
+        self._last_apply = None
         if hasattr(Adw, "EntryRow"):
             cls = Adw.PasswordEntryRow if password and hasattr(Adw, "PasswordEntryRow") else Adw.EntryRow
             self.widget = cls(title=title)
@@ -137,8 +140,15 @@ class EntryRow:
         self.set_text(text)
 
     def _apply(self):
-        if not self._quiet.silent and self.on_apply:
-            self.on_apply(self.get_text())
+        if self._quiet.silent or not self.on_apply:
+            return
+        # Je nach libadwaita-Version lösen Eingabetaste und Übernehmen-Knopf beide Signale aus
+        text = self.get_text()
+        now = time.monotonic()
+        if self._last_apply and self._last_apply[0] == text and now - self._last_apply[1] < 0.5:
+            return
+        self._last_apply = (text, now)
+        self.on_apply(text)
 
     def get_text(self):
         return self._entry.get_text()

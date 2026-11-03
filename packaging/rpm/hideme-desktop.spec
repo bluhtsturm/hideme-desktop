@@ -3,7 +3,7 @@
 %global __brp_strip %{nil}
 
 Name:           hideme-desktop
-Version:        1.0.0
+Version:        1.0.1
 Release:        1%{?dist}
 Summary:        Inoffizielle GTK-Oberfläche für den hide.me CLI VPN-Client
 License:        GPL-2.0-only

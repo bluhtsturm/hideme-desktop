@@ -1,6 +1,6 @@
 """Seite "Protokoll": Daemon-Log (Ringpuffer) und Live-Ereignisse."""
 
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import Gio, GLib, Gtk
 
 from .. import api as A
 from . import util as U
@@ -33,31 +33,38 @@ class LogView(Gtk.Box):
         self._raw_log = ""
         self._auto_timer = 0
 
-        bar = Gtk.Box(spacing=8, margin_top=10, margin_bottom=8, margin_start=12, margin_end=12)
+        # Zwei Zeilen, damit das Fenster auch schmal (ab 360 px) bedienbar bleibt
         self.stack = Gtk.Stack(vexpand=True)
-        switcher = Gtk.StackSwitcher(stack=self.stack)
-        bar.append(switcher)
+        switcher = Gtk.StackSwitcher(stack=self.stack, halign=Gtk.Align.CENTER, margin_top=10)
+        self.append(switcher)
+        bar = Gtk.Box(spacing=6, margin_top=8, margin_bottom=8, margin_start=12, margin_end=12)
         self.search = Gtk.SearchEntry(placeholder_text="Filtern", hexpand=True)
+        self.search.set_width_chars(6)
         self.search.connect("search-changed", lambda *_a: self._render())
         bar.append(self.search)
         self.only_errors = Gtk.ToggleButton(icon_name="dialog-warning-symbolic",
                                             tooltip_text="Nur Warnungen und Fehler anzeigen")
         self.only_errors.connect("toggled", lambda *_a: self._render())
         bar.append(self.only_errors)
-        self.auto = Gtk.ToggleButton(icon_name="media-playlist-repeat-symbolic",
-                                     tooltip_text="Automatisch aktualisieren",
-                                     active=controller.settings["log_autorefresh"])
-        self.auto.connect("toggled", self._auto_toggled)
-        bar.append(self.auto)
         refresh = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text="Neu laden")
         refresh.connect("clicked", lambda *_a: self.load())
         bar.append(refresh)
-        copy = Gtk.Button(icon_name="edit-copy-symbolic", tooltip_text="In die Zwischenablage kopieren")
-        copy.connect("clicked", lambda *_a: self._copy())
-        bar.append(copy)
-        save = Gtk.Button(icon_name="document-save-symbolic", tooltip_text="Als Datei speichern …")
-        save.connect("clicked", lambda *_a: self._save())
-        bar.append(save)
+
+        actions = Gio.SimpleActionGroup()
+        self.auto = Gio.SimpleAction.new_stateful(
+            "autorefresh", None, GLib.Variant("b", bool(controller.settings["log_autorefresh"])))
+        self.auto.connect("change-state", self._auto_changed)
+        actions.add_action(self.auto)
+        for name, callback in (("copy", self._copy), ("save", self._save)):
+            action = Gio.SimpleAction.new(name, None)
+            action.connect("activate", lambda *_a, cb=callback: cb())
+            actions.add_action(action)
+        self.insert_action_group("log", actions)
+        menu = Gio.Menu()
+        menu.append("Automatisch aktualisieren", "log.autorefresh")
+        menu.append("In die Zwischenablage kopieren", "log.copy")
+        menu.append("Als Datei speichern …", "log.save")
+        bar.append(Gtk.MenuButton(icon_name="view-more-symbolic", menu_model=menu, tooltip_text="Weitere Aktionen"))
         self.append(bar)
         self.append(self.stack)
 
@@ -68,7 +75,7 @@ class LogView(Gtk.Box):
         self.stack.connect("notify::visible-child-name", lambda *_a: self._render())
 
         self.ctl.connect("event", self._on_event)
-        self._auto_toggled(self.auto)
+        self._apply_autorefresh(bool(controller.settings["log_autorefresh"]))
 
     def _make_textview(self):
         view = Gtk.TextView(editable=False, monospace=True, wrap_mode=Gtk.WrapMode.WORD_CHAR,
@@ -78,12 +85,16 @@ class LogView(Gtk.Box):
         scroller.set_child(view)
         return view, scroller
 
-    def _auto_toggled(self, btn):
-        self.ctl.settings["log_autorefresh"] = btn.get_active()
+    def _auto_changed(self, action, value):
+        action.set_state(value)
+        self.ctl.settings["log_autorefresh"] = value.get_boolean()
+        self._apply_autorefresh(value.get_boolean())
+
+    def _apply_autorefresh(self, enabled):
         if self._auto_timer:
             GLib.source_remove(self._auto_timer)
             self._auto_timer = 0
-        if btn.get_active():
+        if enabled:
             self._auto_timer = GLib.timeout_add_seconds(3, self._auto_tick)
 
     def _auto_tick(self):

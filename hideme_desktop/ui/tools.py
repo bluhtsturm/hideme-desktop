@@ -185,7 +185,10 @@ class ToolsWindow(Adw.Window):
             def done(data):
                 patch = {k: data[k] for k in ("Rest", "WireGuard", "DoH", "Plain") if isinstance(data.get(k), dict)}
                 if "Rest" in patch:
-                    patch["Rest"] = {k: v for k, v in patch["Rest"].items() if k not in ("APIVersion", "Domain")}
+                    # Benutzername/Passwort nicht übernehmen: Verbindungen nutzen nur das Zugangstoken,
+                    # und das Passwort landete sonst im Klartext in der Daemon-Konfiguration.
+                    patch["Rest"] = {k: v for k, v in patch["Rest"].items()
+                                     if k not in ("APIVersion", "Domain", "Username", "Password")}
                     if not patch["Rest"].get("AccessToken"):
                         patch["Rest"].pop("AccessToken", None)
                 if not patch:

@@ -20,7 +20,9 @@ UMask=0007
 TimeoutStopSec=30
 Restart=on-failure
 RestartSec=3s
-ReadWritePaths=/etc -/run/systemd/resolve
+# /etc/resolv.conf ist oft ein Verweis nach /run (systemd-resolved, NetworkManager, resolvconf);
+# ohne Schreibrecht dort schlägt jeder Verbindungsaufbau beim Setzen des DNS fehl.
+ReadWritePaths=/etc -/run/systemd/resolve -/run/NetworkManager -/run/resolvconf
 ProtectSystem=strict
 ProtectHome=true
 ProtectKernelTunables=true

@@ -20,18 +20,38 @@ from . import config as C
 from .settings import cache_dir
 
 POLL_INTERVAL_MS = 1500
+SERVERLIST_MAX_AGE = 6 * 3600
 MAX_EVENTS = 500
 
 AUTH_ERRORS = ("no Access-Token", "bad HTTP status 401", "bad HTTP status 403", "no username", "no password",
                "application update required")
 
 
+def retry_busy(func, *args, attempts=15, **kwargs):
+    """Wiederholt einen Aufruf, solange der Daemon eine andere Operation ausführt (HTTP 409).
+
+    Der Daemon wartet selbst bis zu 1 s auf seine Sperre; zusammen mit der Pause hier
+    ergibt das bei 15 Versuchen rund 30 s – genug z. B. für den ersten Abruf der Serverliste.
+    """
+    for attempt in range(attempts):
+        try:
+            return func(*args, **kwargs)
+        except A.Busy:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(1.0)
+
+
+R = retry_busy
+
+
 def parse_go_time(text):
     """Go-Zeitstempel (RFC 3339 mit Nanosekunden) → datetime oder None."""
     if not text or text.startswith("0001-01-01"):
         return None
-    text = re.sub(r"(\.\d{6})\d+", r"\1", text)
     text = text.replace("Z", "+00:00")
+    # Go kürzt Nachkommastellen (bis zu 9); Python < 3.11 akzeptiert nur genau 3 oder 6
+    text = re.sub(r"\.(\d+)", lambda m: "." + (m.group(1) + "000000")[:6], text, count=1)
     try:
         return datetime.datetime.fromisoformat(text)
     except ValueError:
@@ -89,7 +109,9 @@ class Controller(GObject.Object):
         self.servers_error = None
         self.servers_loading = False
         self.last_error = None
+        self.cancel_requested = False
         self._autoconnect_pending = False
+        self._have_state = False
 
         self._ops = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="hideme-op")
         self._poller = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="hideme-poll")
@@ -130,6 +152,7 @@ class Controller(GObject.Object):
         self.settings["control_tls_verify"] = tls_verify
         self._stop_watch()
         self.api = self._make_api()
+        self._have_state = False
         self._set_unavailable("Verbinde mit dem Daemon …", "unknown")
         self.poll_now()
 
@@ -159,8 +182,13 @@ class Controller(GObject.Object):
 
     def _report_error(self, title, exc):
         msg = exc.message if isinstance(exc, A.ApiError) else str(exc)
-        self.last_error = msg
         self.emit("error", title, C.explain_error(msg))
+
+    def _refuse_if_busy(self):
+        if self.busy:
+            self.emit("notice", "Bitte warten – eine andere Aktion läuft noch.")
+            return True
+        return False
 
     def _run_op(self, label, func, on_done=None, on_error=None):
         if self.busy:
@@ -190,6 +218,10 @@ class Controller(GObject.Object):
                 self._report_error("Aktion fehlgeschlagen", exc)
         elif on_done:
             on_done(fut.result())
+        if self.cancel_requested and self.busy is None:
+            # Während des Aufbaus wurde "Abbrechen" gewählt – jetzt trennen
+            self.cancel_requested = False
+            self.disconnect_vpn()
         self.emit("changed")
         self.poll_now()
         self._maybe_schedule_reconnect()
@@ -323,11 +355,13 @@ class Controller(GObject.Object):
             self.daemon_version = v
             self.emit("changed")
         self.run_bg(ver, got_version, lambda e: None)
-        if not self.servers:
+        if not self.servers or self._servers_cache_age() > SERVERLIST_MAX_AGE:
             self.refresh_servers()
         self.emit("changed")
 
     def _apply_state(self, st):
+        first = not self._have_state
+        self._have_state = True
         old_code = self.code
         code = st.get("code") or A.CLEAN
         self.state = st
@@ -349,7 +383,7 @@ class Controller(GObject.Object):
             self._last_counters = None
             self.rx_rate = self.tx_rate = 0.0
 
-        if code != old_code:
+        if code != old_code and not first:
             self._on_transition(old_code, code)
         if self._autoconnect_pending and self.available:
             self._autoconnect_pending = False
@@ -359,7 +393,8 @@ class Controller(GObject.Object):
                     host = self.settings["last_server"]
                 if host:
                     self.connect_vpn(host)
-        if code == A.CONNECTED and old_code != A.CONNECTED and not self.want_connected:
+        if code == A.CONNECTED and old_code != A.CONNECTED and not self.want_connected \
+                and not self.cancel_requested:
             # Verbindung besteht bereits (z. B. nach Neustart der App)
             self.want_connected = True
         self.emit("changed")
@@ -371,11 +406,20 @@ class Controller(GObject.Object):
             self.reconnect_at = None
             self.daemon_reconnect_until = 0.0
             self.user_disconnected = False
+            self.last_error = None
             host = C.short_name(self.state.get("host") or self.current_host)
             self.emit("notify-user", "vpn-state", "VPN verbunden", f"Verbunden mit {host}")
         elif old == A.CONNECTED:
             self.ext_ip4 = self.ext_ip6 = None
-            if not self.user_disconnected and self.busy not in ("connect", "reconnect", "disconnect"):
+            ours = self.user_disconnected or self.busy in ("connect", "reconnect", "disconnect")
+            if new == A.DISCONNECTING and not ours:
+                # Ohne vorheriges "dpd timeout" trennt der Daemon nur auf Anweisung eines anderen
+                # Clients (z. B. hidemectl) – dann nicht eigenmächtig neu verbinden.
+                self.want_connected = False
+                self.reconnect_at = None
+                self.emit("notify-user", "vpn-state", "VPN getrennt",
+                          "Die Verbindung wurde von einem anderen Programm getrennt.")
+            elif new != A.DPD_TIMEOUT and not ours:  # bei DPD meldet _on_event bereits
                 body = "Die Verbindung wurde unterbrochen."
                 if self.leak_protection:
                     body += " Der Kill-Switch blockiert ungeschützten Verkehr."
@@ -399,7 +443,7 @@ class Controller(GObject.Object):
 
     # ------------------------------------------------------------------ watch stream
     def _start_watch(self):
-        if self._watch_thread and self._watch_thread.is_alive():
+        if self._watch_thread and self._watch_thread.is_alive() and not self._watch_stop.is_set():
             return
         self._watch_stop = threading.Event()
         stop = self._watch_stop
@@ -442,9 +486,11 @@ class Controller(GObject.Object):
         if not isinstance(ev, dict):
             return
         code = ev.get("code") or ""
-        entry = {"time": datetime.datetime.now(), "code": code, "data": ev}
-        self.events.append(entry)
-        del self.events[:-MAX_EVENTS]
+        if code not in (A.CONFIGURATION_GET, A.LOG_DUMP):
+            # Jede eigene Abfrage von Konfiguration oder Protokoll erzeugt ein solches Ereignis;
+            # gespeichert würden sie die eigentlichen Ereignisse aus dem Puffer verdrängen.
+            self.events.append({"time": datetime.datetime.now(), "code": code, "data": ev})
+            del self.events[:-MAX_EVENTS]
         self.emit("event", code, ev)
 
         if code == A.DPD_TIMEOUT:
@@ -489,7 +535,8 @@ class Controller(GObject.Object):
 
         def failed(_exc):
             self._config_fetch_inflight = False
-            GLib.timeout_add_seconds(2, lambda: (self.refresh_config(), False)[1])
+            if self.available:
+                GLib.timeout_add_seconds(2, lambda: (self.refresh_config(), False)[1])
 
         self.run_bg(api.get_configuration, done, failed)
 
@@ -499,19 +546,13 @@ class Controller(GObject.Object):
         reroute = C.patch_needs_reroute(patch)
 
         def work():
-            for attempt in range(6):
-                try:
-                    return api.set_configuration(patch)
-                except A.Busy:
-                    if attempt == 5:
-                        raise
-                    time.sleep(1.0)
+            return R(api.set_configuration, patch)
 
         def done(_res):
             if patch:
                 if reroute:
                     self._dirty = True
-                if self.code in (A.CONNECTED, A.CONNECTING) and not quiet:
+                if self.code in (A.CONNECTED, A.CONNECTING) and not quiet and C.patch_needs_reconnect(patch):
                     self.pending_changes = True
                 elif reroute and self.code == A.ROUTED and not self.busy and not self.want_connected:
                     self._reroute_idle()
@@ -541,10 +582,10 @@ class Controller(GObject.Object):
         api = self.api
 
         def work():
-            api.destroy()
-            cfg = api.get_configuration()
+            R(api.destroy)
+            cfg = R(api.get_configuration)
             if keep_blocked and C.get(cfg, "WireGuard", "LeakProtection"):
-                api.route()
+                R(api.route)
 
         def done(_r):
             self._dirty = False
@@ -552,14 +593,18 @@ class Controller(GObject.Object):
 
     # ------------------------------------------------------------------ actions
     def connect_vpn(self, host=None):
+        if self._refuse_if_busy():
+            return
         host = C.fqdn(host or self.current_host)
         if not host:
             self.emit("error", "Kein Server ausgewählt", "Bitte wähle zuerst einen Server aus der Liste.")
             return
         self.want_connected = True
         self.user_disconnected = False
+        self.cancel_requested = False
         self.reconnect_attempt = 0
         self.reconnect_at = None
+        self.last_error = None
         self._connect(host, auto=False)
 
     def _connect(self, host, auto):
@@ -570,19 +615,20 @@ class Controller(GObject.Object):
         self._dirty = False
         api = self.api
         timeout = C.seconds(C.get(self.config, "Rest", "RestTimeout")) + 60
+        prev = {"code": None}
 
         def work():
-            st = api.state()
-            code = st.get("code")
+            st = R(api.state)
+            prev["code"] = code = st.get("code")
             if code in (A.CONNECTED, A.CONNECTING, A.DPD_TIMEOUT):
-                api.disconnect()
+                R(api.disconnect)
                 code = A.ROUTED
-            api.set_configuration({"Rest": {"Host": host}})
+            R(api.set_configuration, {"Rest": {"Host": host}})
             if dirty and code == A.ROUTED:
-                api.destroy()
-            result = api.connect(timeout=timeout)
+                R(api.destroy)
+            result = R(api.connect, timeout=timeout)
             try:
-                api.external_ips()
+                R(api.external_ips, attempts=3)
             except A.ApiError:
                 pass
             return result
@@ -590,6 +636,7 @@ class Controller(GObject.Object):
         def done(result):
             self.pending_changes = False
             self.ext_ip_checking = True
+            GLib.timeout_add_seconds(20, self._ext_ip_timeout)
             if isinstance(result, dict):
                 self._apply_state(result)
 
@@ -597,39 +644,62 @@ class Controller(GObject.Object):
             self._dirty = self._dirty or dirty
             msg = exc.message if isinstance(exc, A.ApiError) else str(exc)
             self.last_error = msg
-            if any(s.lower() in msg.lower() for s in AUTH_ERRORS):
+            if self.cancel_requested:
+                return  # wird ohnehin gleich getrennt
+            if "no Access-Token" in msg:
                 self.want_connected = False
                 self.reconnect_at = None
-                if "no Access-Token" in msg or self.has_token is False:
-                    self.emit("login-required")
+                self.emit("notice", "Bitte zuerst mit deinem hide.me-Konto anmelden.")
+                self.emit("login-required")
+            elif any(s.lower() in msg.lower() for s in AUTH_ERRORS):
+                self.want_connected = False
+                self.reconnect_at = None
                 self.emit("error", "Verbindung fehlgeschlagen", C.explain_error(msg))
             elif auto:
                 self.emit("notice", f"Neuverbindung fehlgeschlagen: {msg}")
+                return  # Kill-Switch schützt weiter, nächster Versuch folgt
             else:
                 self.want_connected = False
                 self.emit("error", "Verbindung fehlgeschlagen", C.explain_error(msg))
                 self.emit("notify-user", "vpn-error", "VPN-Verbindung fehlgeschlagen", C.explain_error(msg))
+            if not auto and prev["code"] == A.CLEAN and not self.settings["block_after_disconnect"]:
+                # Ein fehlgeschlagener Verbindungsversuch lässt den Daemon im Zustand "routed" zurück;
+                # mit Kill-Switch wäre das Internet dann gesperrt. Ausgangszustand wiederherstellen.
+                self._run_op("disconnect", lambda: R(api.destroy))
 
         self._run_op("reconnect" if auto else "connect", work, done, failed)
 
-    def disconnect_vpn(self):
+    def _stop_wanting(self):
         self.want_connected = False
         self.user_disconnected = True
         self.reconnect_at = None
         self.daemon_reconnect_until = 0.0
         self.pending_changes = False
+
+    def disconnect_vpn(self):
+        if self.busy in ("connect", "reconnect"):
+            # Der Daemon kann einen laufenden Aufbau nicht abbrechen; danach sofort trennen
+            self.cancel_requested = True
+            self.want_connected = False
+            self.reconnect_at = None
+            self.emit("notice", "Die Verbindung wird nach dem laufenden Aufbau getrennt.")
+            self.emit("changed")
+            return
+        if self._refuse_if_busy():
+            return
+        self._stop_wanting()
         block = self.settings["block_after_disconnect"] and self.leak_protection
         api = self.api
         dirty = self._dirty
 
         def work():
             if block:
-                api.disconnect()
+                R(api.disconnect)
                 if dirty:
-                    api.destroy()
-                    api.route()
+                    R(api.destroy)
+                    R(api.route)
             else:
-                api.destroy()
+                R(api.destroy)
 
         def done(_r):
             self._dirty = False
@@ -650,20 +720,40 @@ class Controller(GObject.Object):
 
     def unblock(self):
         """Hebt die Kill-Switch-Blockade auf (Routing entfernen)."""
-        self.want_connected = False
-        self.reconnect_at = None
+        if self._refuse_if_busy():
+            return
+        self._stop_wanting()
         api = self.api
-        self._run_op("disconnect", api.destroy, lambda _r: self.check_external_ip(quiet=True))
+        self._run_op("disconnect", lambda: R(api.destroy), lambda _r: self.check_external_ip(quiet=True))
 
     def block(self):
         """Aktiviert die Blockade ohne Verbindung (Routing + Kill-Switch)."""
-        self._run_op("config", self.api.route)
+        if self._refuse_if_busy():
+            return
+        self._stop_wanting()
+        api = self.api
+
+        def work():
+            code = R(api.state).get("code")
+            if code in (A.CONNECTED, A.CONNECTING, A.DPD_TIMEOUT):
+                R(api.disconnect)  # lässt Routing und Kill-Switch bestehen
+            elif code == A.CLEAN:
+                R(api.route)
+        self._run_op("disconnect", work)
 
     def destroy(self):
-        self._run_op("disconnect", self.api.destroy)
+        if self._refuse_if_busy():
+            return
+        self._stop_wanting()
+        api = self.api
+        self._run_op("disconnect", lambda: R(api.destroy))
 
     def shutdown_routing(self):
-        self._run_op("disconnect", self.api.shutdown)
+        if self._refuse_if_busy():
+            return
+        self._stop_wanting()
+        api = self.api
+        self._run_op("disconnect", lambda: R(api.shutdown))
 
     def check_external_ip(self, quiet=False):
         api = self.api
@@ -694,21 +784,20 @@ class Controller(GObject.Object):
         host = C.fqdn(host or self.settings["token_host"] or "free")
 
         def work():
-            cfg = api.get_configuration()
+            cfg = R(api.get_configuration)
             old = (cfg.get("Rest") or {}).get("AccessToken") or ""
             if old:
-                api.set_configuration({"Rest": {"AccessToken": ""}})
+                # Ein vorhandenes Token hätte bei der Anfrage Vorrang vor Benutzername/Passwort
+                R(api.set_configuration, {"Rest": {"AccessToken": ""}})
             try:
-                token = api.request_token(host, username, password)
+                token = R(api.request_token, host, username, password)
+                if not isinstance(token, str) or not token:
+                    raise A.ApiError("Der Server hat kein Token geliefert")
             except Exception:
                 if old:
-                    api.set_configuration({"Rest": {"AccessToken": old}})
+                    R(api.set_configuration, {"Rest": {"AccessToken": old}})
                 raise
-            if not isinstance(token, str) or not token:
-                if old:
-                    api.set_configuration({"Rest": {"AccessToken": old}})
-                raise A.ApiError("Der Server hat kein Token geliefert")
-            api.set_configuration({"Rest": {"AccessToken": token}})
+            R(api.set_configuration, {"Rest": {"AccessToken": token}})
             return True
 
         def done(_r):
@@ -735,11 +824,11 @@ class Controller(GObject.Object):
         host = C.fqdn(self.settings["token_host"] or "free")
 
         def work():
-            cur = api.get_configuration().get("Rest") or {}
+            cur = R(api.get_configuration).get("Rest") or {}
             if not cur.get("Host"):
-                api.set_configuration({"Rest": {"Host": host}})
-            token = api.token()
-            api.set_configuration({"Rest": {"AccessToken": token}})
+                R(api.set_configuration, {"Rest": {"Host": host}})
+            token = R(api.token)
+            R(api.set_configuration, {"Rest": {"AccessToken": token}})
 
         def done(_r):
             self.refresh_config()
@@ -752,9 +841,9 @@ class Controller(GObject.Object):
         api = self.api
 
         def work():
-            api.set_configuration({"Rest": {"AccessToken": ""}})
+            R(api.set_configuration, {"Rest": {"AccessToken": ""}})
             try:
-                api.delete_token()
+                R(api.delete_token)
             except A.ApiError:
                 pass
 
@@ -767,6 +856,12 @@ class Controller(GObject.Object):
     # Serverliste -----------------------------------------------------------
     def _servers_cache_path(self):
         return os.path.join(cache_dir(), "serverlist.json")
+
+    def _servers_cache_age(self):
+        try:
+            return time.time() - os.path.getmtime(self._servers_cache_path())
+        except OSError:
+            return float("inf")
 
     def _load_cached_servers(self):
         try:
@@ -786,13 +881,7 @@ class Controller(GObject.Object):
         api = self.api
 
         def work():
-            for attempt in range(10):
-                try:
-                    return api.server_list()
-                except A.Busy:
-                    if attempt == 9:
-                        raise
-                    time.sleep(2)
+            return R(api.server_list, attempts=10)
 
         def done(data):
             self.servers_loading = False

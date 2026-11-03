@@ -21,6 +21,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.ctl = controller
         self._tools = None
         self._login = None
+        self._prefs = None
 
         self.toasts = Adw.ToastOverlay()
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -53,6 +54,8 @@ class MainWindow(Adw.ApplicationWindow):
                              "Neu verbinden", lambda: self.ctl.reconnect())
         root.append(self.banner.widget)
 
+        # Der Stapel ist homogen: auch die gerade unsichtbare Seite "Daemon nicht erreichbar"
+        # bestimmt die Mindestbreite des Fensters – ihre Knöpfe müssen daher schmal bleiben.
         self.outer = Gtk.Stack(vexpand=True, transition_type=Gtk.StackTransitionType.CROSSFADE)
         root.append(self.outer)
         self.outer.add_named(self.view_stack, "main")
@@ -120,7 +123,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.unavail_start.add_css_class("suggested-action")
         self.unavail_start.connect("clicked", lambda *_a: self._start_daemon())
         box.append(self.unavail_start)
-        self.unavail_relaunch = Gtk.Button(label="App mit Gruppenrechten neu starten")
+        self.unavail_relaunch = Gtk.Button(label="Mit Gruppenrechten neu starten")
         self.unavail_relaunch.add_css_class("pill")
         self.unavail_relaunch.connect("clicked", lambda *_a: self._relaunch())
         box.append(self.unavail_relaunch)
@@ -201,8 +204,14 @@ class MainWindow(Adw.ApplicationWindow):
         self.view_stack.set_visible_child_name(name)
 
     def show_preferences(self, page=None):
-        prefs = Preferences(self, self.ctl)
-        prefs.present(page)
+        # Nur ein Einstellungsdialog gleichzeitig (z. B. bei mehrfachem Aufruf aus dem Tray)
+        if self._prefs is None:
+            self._prefs = Preferences(self, self.ctl)
+
+            def closed():
+                self._prefs = None
+            self._prefs.on_closed = closed
+        self._prefs.present(page)
 
     def show_tools(self):
         if self._tools is None or not self._tools.get_visible():

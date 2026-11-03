@@ -21,7 +21,7 @@ class ServersView(Gtk.Box):
         self._rows = []  # (row, searchable_text, is_free, parent_expander_or_None, host)
         self._expanders = []
         self._current_marks = {}
-        self._star_buttons = {}
+        self._fav_rows = []
 
         bar = Gtk.Box(spacing=8, margin_top=10, margin_bottom=6, margin_start=12, margin_end=12)
         clamp_bar = Adw.Clamp(maximum_size=720)
@@ -64,9 +64,6 @@ class ServersView(Gtk.Box):
         err_box.append(clamp_err)
         self.error_page.set_child(err_box)
         self.stack.add_named(self.error_page, "error")
-
-        self.no_results = Adw.StatusPage(icon_name="edit-find-symbolic", title="Keine Treffer",
-                                         description="Versuche einen anderen Suchbegriff.")
 
         scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, vexpand=True)
         clamp = Adw.Clamp(maximum_size=720, margin_top=6, margin_bottom=24, margin_start=12, margin_end=12)
@@ -192,6 +189,7 @@ class ServersView(Gtk.Box):
         self._rows = []
         self._expanders = []
         self._current_marks = {}
+        self._fav_rows = []
         for group in [self.fav_group] + [g for g, _m in self._groups]:
             if group.get_parent() is not None:
                 self.list_box.remove(group)
@@ -215,7 +213,9 @@ class ServersView(Gtk.Box):
         for host in favs:
             loc = self.ctl.find_server(host)
             if loc:
-                self.fav_group.add(self._make_row(loc))
+                row = self._make_row(loc)
+                self.fav_group.add(row)
+                self._fav_rows.append(row)
             else:
                 row = Adw.ActionRow(title=host, subtitle="Eigener Server", activatable=True)
                 flag = Gtk.Label(label="🌐")
@@ -225,6 +225,7 @@ class ServersView(Gtk.Box):
                 row.connect("activated", lambda *_a, h=host: self._connect(h))
                 self._rows.append((row, _norm(host), False, None, host))
                 self.fav_group.add(row)
+                self._fav_rows.append(row)
         self.fav_group.set_visible(bool(favs))
 
         # Kostenlose Server zuerst, danach nach Kontinent gruppiert
@@ -282,6 +283,7 @@ class ServersView(Gtk.Box):
             parent_ok = all(p in text for p in parts) and (not free_only or exp_free[exp])
             exp.set_visible(parent_ok or visible_children.get(exp, False))
             exp.set_expanded(bool(parts) and visible_children.get(exp, False))
+        self.fav_group.set_visible(any(r.get_visible() for r in self._fav_rows))
         any_visible = False
         for group, members in self._groups:
             shown = any(m.get_visible() for m in members)

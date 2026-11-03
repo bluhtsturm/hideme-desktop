@@ -36,7 +36,11 @@ if [ "$1" = configure ]; then
     if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then usermod -aG hideme "$SUDO_USER" || true; fi
     if [ -d /run/systemd/system ]; then
         systemctl daemon-reload || true
-        systemctl enable --now hideme-daemon.service || true
+        systemctl enable hideme-daemon.service || true
+        if [ -n "$2" ]; then
+            systemctl try-restart hideme-daemon.service || true   # Aktualisierung
+        fi
+        systemctl start hideme-daemon.service || true
     fi
     gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
 fi

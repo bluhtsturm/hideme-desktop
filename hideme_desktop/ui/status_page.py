@@ -160,8 +160,8 @@ class StatusView(Gtk.ScrolledWindow):
 
     def _on_main(self, *_a):
         phase = self.ctl.phase()
-        if phase in ("connected", "reconnecting") or (phase == "connecting" and self.ctl.busy is None):
-            self.ctl.disconnect_vpn()
+        if phase in ("connected", "reconnecting", "connecting"):
+            self.ctl.disconnect_vpn()  # während des Aufbaus: Abbrechen
         elif phase == "unavailable":
             self.ctl.poll_now()
         else:
@@ -257,8 +257,8 @@ class StatusView(Gtk.ScrolledWindow):
             self.main_button.add_css_class("destructive-action")
             self.main_button.set_sensitive(True)
         elif phase == "connecting":
-            self.main_label.set_text("Verbinde …" if ctl.busy else "Abbrechen")
-            self.main_button.set_sensitive(ctl.busy is None)
+            self.main_label.set_text("Wird abgebrochen …" if ctl.cancel_requested else "Abbrechen")
+            self.main_button.set_sensitive(not ctl.cancel_requested)
         elif phase == "disconnecting":
             self.main_label.set_text("Trenne …")
             self.main_button.set_sensitive(False)

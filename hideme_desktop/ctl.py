@@ -7,6 +7,7 @@ import argparse
 import getpass
 import json
 import sys
+import threading
 import time
 
 from . import DEFAULT_SOCKET, VERSION
@@ -48,7 +49,8 @@ def cmd_connect(client, args):
         except A.ApiError as e:
             msg = e.message
             print(f"Versuch {attempt}/{attempts} fehlgeschlagen: {msg}", file=sys.stderr)
-            if "no Access-Token" in msg or "401" in msg or "403" in msg or attempt == attempts:
+            permanent = ("no Access-Token", "missing host", "401", "403", "application update required")
+            if any(p in msg for p in permanent) or attempt == attempts:
                 return 1
             time.sleep(min(5 * attempt, 30))
     return 1
@@ -109,20 +111,35 @@ def main(argv=None):
         elif args.cmd == "ip":
             stream = client.watch()
             time.sleep(0.3)  # dem Daemon Zeit geben, den Beobachter zu registrieren
+            timer = threading.Timer(20, stream.close)  # nicht ewig auf das Ereignis warten
+            timer.start()
             client.external_ips()
-            deadline = time.time() + 15
+            found = False
             for ev in stream:
                 if ev.get("code") == A.EXTERNAL_IPS:
                     print(f"IPv4: {ev.get('external_ip') or '–'}")
                     print(f"IPv6: {ev.get('external_ipv6') or '–'}")
+                    found = True
                     break
-                if time.time() > deadline:
-                    break
+            timer.cancel()
             stream.close()
+            if not found:
+                print("Fehler: keine Antwort vom Daemon", file=sys.stderr)
+                return 1
         elif args.cmd == "login":
             password = getpass.getpass("Passwort: ")
-            client.set_configuration({"Rest": {"AccessToken": ""}})
-            token = client.request_token(C.fqdn(args.host), args.username, password)
+            old = (client.get_configuration().get("Rest") or {}).get("AccessToken") or ""
+            if old:
+                # Ein vorhandenes Token hätte bei der Anfrage Vorrang vor Benutzername/Passwort
+                client.set_configuration({"Rest": {"AccessToken": ""}})
+            try:
+                token = client.request_token(C.fqdn(args.host), args.username, password)
+                if not isinstance(token, str) or not token:
+                    raise A.ApiError("Der Server hat kein Token geliefert")
+            except A.ApiError:
+                if old:
+                    client.set_configuration({"Rest": {"AccessToken": old}})  # altes Token behalten
+                raise
             client.set_configuration({"Rest": {"AccessToken": token}})
             print("Zugangstoken gespeichert.")
         elif args.cmd == "logout":

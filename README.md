@@ -29,13 +29,13 @@ für alle gängigen Linux-Desktops: GNOME, KDE Plasma, Xfce, Cinnamon, MATE, Bud
 
 Fertige Dateien gibt es unter [Releases](https://github.com/bluhtsturm/hideme-desktop/releases/latest):
 
-- `hideme-desktop_1.0.0_amd64.deb` – Paket für Debian, Ubuntu, Linux Mint, Pop!_OS & Co.
+- `hideme-desktop_<Version>_amd64.deb` – Paket für Debian, Ubuntu, Linux Mint, Pop!_OS & Co.
 - `hide.me-0.9.14-linux-amd64` – das hide.me-Programm (statisch gelinkt, aus dem mitgelieferten Quellcode gebaut)
 
 Debian/Ubuntu-basierte Systeme:
 
 ```bash
-sudo apt install ./hideme-desktop_1.0.0_amd64.deb
+sudo apt install ./hideme-desktop_*_amd64.deb
 ```
 
 Alle anderen Distributionen (oder ohne Paket):
@@ -74,8 +74,8 @@ unterstützen das Tray-Protokoll direkt.
 
 | Distribution | Befehl | Ergebnis |
 |---|---|---|
-| Debian, Ubuntu, Mint, Pop!_OS | `packaging/debian/build-deb.sh` | `dist/hideme-desktop_1.0.0_amd64.deb` |
-| Fedora, openSUSE | `packaging/rpm/build-rpm.sh` | `dist/hideme-desktop-1.0.0-1.*.rpm` |
+| Debian, Ubuntu, Mint, Pop!_OS | `packaging/debian/build-deb.sh` | `dist/hideme-desktop_<Version>_amd64.deb` |
+| Fedora, openSUSE | `packaging/rpm/build-rpm.sh` | `dist/hideme-desktop-<Version>-1.*.rpm` |
 | Arch, Manjaro, EndeavourOS | `cd packaging/arch && makepkg -si` | Paket wird direkt installiert |
 
 Nur das Programm bauen: `./build.sh` (Go ≥ 1.21; die in `go.mod` verlangte Toolchain 1.24 wird
@@ -167,9 +167,10 @@ der eigenen hide.me-CA (`CA.pem`).
 ## Entwicklung
 
 ```bash
-python3 tests/mock_daemon.py /run/user/$UID/hm-mock.sock          # simulierter Daemon
-python3 -I tests/test_api.py                                        # API-Tests
-dbus-run-session -- python3 -I tests/ui_smoke.py /run/user/$UID/hm-mock.sock /tmp/hm-test   # Oberflächentest
+python3 -I tests/test_api.py                    # API-Client und Hilfsfunktionen gegen einen simulierten Daemon
+tests/run_ui_test.sh                            # Oberflächentest (unsichtbare Broadway-Anzeige, ca. 1 Minute)
+python3 -I tests/test_real_binary.py build/hide.me   # gegen das echte hide.me-Programm, ohne Root
+python3 tests/mock_daemon.py /run/user/$UID/hm-mock.sock   # simulierter Daemon zum Ausprobieren
 ```
 
 Struktur: `hideme_desktop/api.py` (REST-Client), `controller.py` (Zustand, Aktionen, Ereignisse),

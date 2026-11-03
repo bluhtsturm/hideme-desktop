@@ -164,8 +164,6 @@ def fqdn(host):
     host = (host or "").strip()
     if not host or is_ip(host) or host.endswith(".hideservers.net"):
         return host
-    if host.endswith("-v4.hideservers.net"):
-        host = host[: -len("-v4.hideservers.net")]
     if host.endswith(".hide.me"):
         host = host[: -len(".hide.me")]
     return host + ".hideservers.net"
@@ -201,6 +199,22 @@ REROUTE_FIELDS = {
     "Rest": {"Mark", "CA", "AccessToken", "AccessTokenPath"},
     "DoH": None,  # alle Felder
 }
+
+
+# Felder, die der Daemon auch während einer bestehenden Verbindung sofort berücksichtigt
+LIVE_FIELDS = {
+    "Rest": {"Host", "RestTimeout", "ReconnectWait", "AccessTokenUpdateDelay"},
+    "WireGuard": {"DpdTimeout"},
+}
+
+
+def patch_needs_reconnect(patch):
+    """True, wenn die Änderung erst nach einer Neuverbindung wirkt."""
+    for section, values in (patch or {}).items():
+        live = LIVE_FIELDS.get(section, set())
+        if any(key not in live for key in (values or {})):
+            return True
+    return False
 
 
 def patch_needs_reroute(patch):

@@ -18,6 +18,7 @@ from .tray import MenuItem, TrayIcon  # noqa: E402
 from .ui import util as U  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+PROJECT_URL = "https://github.com/bluhtsturm/hideme-desktop"
 
 
 def data_dir():
@@ -62,6 +63,7 @@ class Application(Adw.Application):
         self._started = False
         self._tray_signature = None
         self._bg_hint_shown = False
+        self._quitting = False
 
     # ------------------------------------------------------------------ Start
     def do_handle_local_options(self, options):
@@ -136,12 +138,15 @@ class Application(Adw.Application):
         if options.get("toggle"):
             self._when_available(self.controller.toggle)
 
-        background = options.get("background") and self.settings["start_hidden"]
-        action_only = any(k in options for k in ("connect", "disconnect", "toggle"))
-        if first and (background or action_only):
-            return 0  # unsichtbar starten – ein erneuter Aufruf öffnet das Fenster
-        if not action_only:
-            self._show_window()
+        if any(k in options for k in ("connect", "disconnect", "toggle")):
+            return 0  # reine Aktion, kein Fenster
+        if options.get("background"):
+            # Autostart: unsichtbar starten; ein normaler erneuter Aufruf öffnet das Fenster.
+            # Läuft die App bereits, öffnet ein weiterer --background-Aufruf kein Fenster.
+            if first and not self.settings["start_hidden"]:
+                self._show_window()
+            return 0
+        self._show_window()
         return 0
 
     def do_activate(self):
@@ -177,6 +182,9 @@ class Application(Adw.Application):
         return True
 
     def quit_app(self):
+        if self._quitting:
+            return
+        self._quitting = True
         if self.tray:
             self.tray.disable()
         if self.controller:
@@ -205,15 +213,18 @@ class Application(Adw.Application):
                       developer_name="hide.me Desktop (inoffiziell)",
                       comments="Grafische Oberfläche für den quelloffenen hide.me CLI VPN-Client (WireGuard). "
                                "Kein offizielles Produkt der eVenture Ltd.",
-                      website="https://github.com/eventure/hide.client.linux",
+                      website=PROJECT_URL,
                       license_type=Gtk.License.GPL_2_0,
-                      issue_url="https://github.com/eventure/hide.client.linux/issues")
+                      issue_url=f"{PROJECT_URL}/issues")
         if hasattr(Adw, "AboutDialog"):
             dlg = Adw.AboutDialog(**kwargs)
-            dlg.add_credit_section("hide.me CLI", ["eVenture Ltd. (hide.client.linux)"])
-            dlg.present(self.window)
         else:
             dlg = Adw.AboutWindow(transient_for=self.window, **kwargs)
+        dlg.add_credit_section("hide.me CLI", ["eVenture Ltd. https://github.com/eventure/hide.client.linux"])
+        dlg.add_link("Quellcode des hide.me-Clients", "https://github.com/eventure/hide.client.linux")
+        if hasattr(Adw, "AboutDialog"):
+            dlg.present(self.window)
+        else:
             dlg.present()
 
     # ------------------------------------------------------------------ Benachrichtigungen
@@ -328,8 +339,17 @@ class Application(Adw.Application):
 
 
 def main(argv=None):
+    # Programmname = App-ID: daraus entsteht unter X11 die Fensterklasse (WM_CLASS), über die
+    # Panels und Taskleisten das Fenster dem Menüeintrag (StartupWMClass) zuordnen.
+    GLib.set_prgname(APP_ID)
+    GLib.set_application_name(APP_NAME)
     app = Application()
-    return app.run(argv if argv is not None else sys.argv)
+    rc = app.run(argv if argv is not None else sys.argv)
+    # Noch laufende Netzwerkaufrufe in Arbeitsthreads (z. B. ein Verbindungsaufbau mit bis zu
+    # 150 s Zeitlimit) sollen das Beenden nicht verzögern – der Daemon arbeitet unabhängig weiter.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(rc)
 
 
 if __name__ == "__main__":

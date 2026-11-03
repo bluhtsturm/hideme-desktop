@@ -14,11 +14,21 @@ if ! command -v go >/dev/null 2>&1; then
     exit 1
 fi
 
+# Ab Go 1.21 lädt "go" die in go.mod verlangte Version (1.24) selbst nach; ältere können das nicht
+GOVER="$(go env GOVERSION 2>/dev/null || go version | awk '{print $3}')"
+GOMINOR="$(sed -E 's/^go1\.([0-9]+).*/\1/' <<<"$GOVER")"
+if ! [[ "$GOMINOR" =~ ^[0-9]+$ ]] || [ "$GOMINOR" -lt 21 ]; then
+    echo "Fehler: $GOVER ist zu alt (benötigt wird Go 1.21 oder neuer)." >&2
+    echo "  Alternative ohne Go: das fertige Programm hide.me-0.9.14-linux-amd64 von" >&2
+    echo "  https://github.com/bluhtsturm/hideme-desktop/releases als build/hide.me ablegen." >&2
+    exit 1
+fi
+
 mkdir -p "$OUT"
 cd "$SRC/hide.client.linux"
-echo "Baue hide.me mit $(go version) …"
+echo "Baue hide.me mit $GOVER …"
 # GOTOOLCHAIN=auto: ältere Go-Versionen laden die in go.mod verlangte Toolchain selbst nach
 GOTOOLCHAIN="${GOTOOLCHAIN:-auto}" CGO_ENABLED=0 GOFLAGS="${GOFLAGS:--mod=readonly}" \
     go build -trimpath -ldflags="-s -w" -o "$OUT/hide.me" .
+"$OUT/hide.me" conf >/dev/null  # Kurztest: gibt die Standardkonfiguration aus
 echo "Fertig: $OUT/hide.me"
-"$OUT/hide.me" 2>&1 | head -3 || true

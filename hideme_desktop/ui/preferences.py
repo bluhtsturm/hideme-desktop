@@ -29,6 +29,7 @@ class Preferences:
         self._h1 = controller.connect("config-changed", lambda *_a: self._load())
         self._h2 = controller.connect("changed", lambda *_a: self._update_account())
         self.dialog.connect("closed" if hasattr(Adw, "PreferencesDialog") else "destroy", self._on_destroy)
+        self.on_closed = None
         self._load()
 
     def _on_destroy(self, *_a):
@@ -37,6 +38,8 @@ class Preferences:
                 self.ctl.disconnect(h)
             except TypeError:
                 pass
+        if self.on_closed:
+            self.on_closed()
 
     def present(self, page=None):
         if page and page in self.pages:
@@ -57,6 +60,21 @@ class Preferences:
 
     def _bind(self, func):
         self._binders.append(func)
+
+    def _bind_value(self, getter, apply):
+        """Überträgt einen Wert nur, wenn er sich in der Daemon-Konfiguration geändert hat.
+
+        So überschreibt eine Konfigurationsänderung an anderer Stelle keine Eingabe, die in
+        einem Feld getippt, aber noch nicht übernommen wurde.
+        """
+        last = {"value": object()}
+
+        def binder(cfg):
+            value = getter(cfg)
+            if value != last["value"]:
+                last["value"] = value
+                apply(value)
+        self._bind(binder)
 
     def _load(self):
         cfg = self.ctl.config
@@ -96,7 +114,7 @@ class Preferences:
         spin = SpinRow(title, subtitle, lower, upper, step, lower,
                        on_change=lambda v: self._set(section, key, int(v * scale)))
         group.add(spin.widget)
-        self._bind(lambda cfg: spin.set_value((C.get(cfg, section, key) or 0) / scale))
+        self._bind_value(lambda cfg: (C.get(cfg, section, key) or 0) / scale, spin.set_value)
         self._bind(lambda cfg: spin.widget.set_sensitive(cfg is not None))
         return spin
 
@@ -104,7 +122,7 @@ class Preferences:
         entry = EntryRow(title, password=password, placeholder=placeholder,
                          on_apply=lambda t: self._set(section, key, t.strip()))
         group.add(entry.widget)
-        self._bind(lambda cfg: entry.set_text(str(C.get(cfg, section, key) or "")))
+        self._bind_value(lambda cfg: str(C.get(cfg, section, key) or ""), entry.set_text)
         self._bind(lambda cfg: entry.widget.set_sensitive(cfg is not None))
         return entry
 
@@ -276,10 +294,10 @@ class Preferences:
                          "Erfordert Administratorrechte.", "Aktualisieren", self._update_doh)
         self.doh_btn = upd.button
         doh.add(upd)
-        self.doh_servers = ListEditor("Zusätzliche DoH-Server", "DNS-Stamps (sdns://…)",
+        self.doh_servers = ListEditor("DoH-Server", "DNS-Stamps (sdns://…), zusätzlich zu denen aus resolvers.txt",
                                       validator=lambda s: s.startswith("sdns://"), placeholder="sdns://…",
                                       error_text="DNS-Stamps beginnen mit sdns://", add_title="DNS-Stamp hinzufügen",
-                                      empty_text="Eingebaute Standardserver (Quad9)",
+                                      empty_text="Keine – nur Server aus resolvers.txt",
                                       on_change=lambda items: self._set("DoH", "servers", items))
         doh.add(self.doh_servers.widget)
         self._bind(lambda cfg: self.doh_servers.set_items(((cfg or {}).get("DoH") or {}).get("servers") or []))
@@ -360,8 +378,9 @@ class Preferences:
                                          "wird diese verwendet.")
             self.acc_icon.set_from_icon_name("dialog-warning-symbolic")
         avail = self.ctl.available and self.ctl.busy is None
-        for row in (self.login_row, self.refresh_row, self.logout_row):
-            row.button.set_sensitive(avail)
+        self.login_row.button.set_sensitive(avail)
+        self.refresh_row.button.set_sensitive(avail and bool(has))  # Erneuern braucht ein vorhandenes Token
+        self.logout_row.button.set_sensitive(avail)
 
     # ------------------------------------------------------------------ Erweitert
     def _page_advanced(self):

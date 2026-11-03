@@ -69,6 +69,17 @@ try:
     assert C.duration_go(90 * C.NS) == "1m30s"
     assert C.patch_needs_reroute({"WireGuard": {"LeakProtection": False}})
     assert not C.patch_needs_reroute({"Rest": {"Filter": {"ads": True}}})
+    assert C.patch_needs_reconnect({"Rest": {"Filter": {"ads": True}}})
+    assert not C.patch_needs_reconnect({"WireGuard": {"DpdTimeout": 1}, "Rest": {"ReconnectWait": 1}})
+    try:
+        from hideme_desktop.controller import parse_go_time
+    except ImportError:  # ohne PyGObject
+        parse_go_time = None
+    if parse_go_time:
+        for stamp in ("2026-11-01T17:01:02.5+01:00", "2026-11-01T17:01:02.123456789+01:00",
+                      "2026-11-01T16:01:02Z", "2026-11-01T17:01:02.1234+01:00"):
+            assert parse_go_time(stamp) is not None, stamp
+        assert parse_go_time("0001-01-01T00:00:00Z") is None
     print(C.cli_command(cfg, "amsterdam"))
     # nicht erreichbar
     try:

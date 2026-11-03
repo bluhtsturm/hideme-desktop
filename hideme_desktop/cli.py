@@ -27,6 +27,7 @@ def find_binary():
     candidates = [
         os.environ.get("HIDEME_BIN"),
         os.path.join(os.path.dirname(_HERE), "bin", "hide.me"),
+        os.path.join(os.path.dirname(_HERE), "build", "hide.me"),  # Entwicklungsbaum nach ./build.sh
         "/opt/hideme-desktop/bin/hide.me",
         "/usr/lib/hideme-desktop/hide.me",
         "/usr/bin/hide.me",

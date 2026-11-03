@@ -2,7 +2,7 @@
 
 APP_ID = "io.github.HideMeDesktop"
 APP_NAME = "hide.me VPN"
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 # Standardadresse der Steuerschnittstelle des Daemons (siehe data/systemd/hideme-daemon.service)
 DEFAULT_SOCKET = "/run/hideme/hide.me.sock"

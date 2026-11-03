@@ -204,6 +204,10 @@ def s_search():
     visible = [h for (row, _t, _f, exp, h) in sv._rows if row.get_visible() and exp is not None]
     check("Suche 'frank' findet Frankfurt", "frankfurt" in visible, str(visible))
     shot(app.window, "07-server-suche")
+    # Viele Zeilen gleichzeitig ein-/auszublenden bringt die Broadway-Testanzeige (gtk4-broadwayd,
+    # decode_nodes) gelegentlich zum Absturz – die Liste dafür nicht anzeigen. Geprüft wird
+    # weiterhin die Sichtbarkeit der Zeilen selbst.
+    app.window.show_page("status")
     sv.search.set_text("")
     sv.free_toggle.set_active(True)
 
@@ -296,6 +300,13 @@ def s_reconnected():
     check("Neu verbunden, Änderungen angewendet", ctl.code == A.CONNECTED and not ctl.pending_changes,
           f"{ctl.code} pending={ctl.pending_changes}")
     check("Neu-Routing durchgeführt", not ctl._dirty)
+    app.controller.update_config({"WireGuard": {"DpdTimeout": 45 * 1_000_000_000}})
+
+
+@step(1200)
+def s_live_setting():
+    ctl = app.controller
+    check("Live-Einstellung (DPD) ohne Neuverbindungs-Hinweis", not ctl.pending_changes)
     app.controller.update_config({"WireGuard": {"LeakProtection": True}})
     # Verbindungsabbruch simulieren
     raw.request("GET", "/dpd")
@@ -312,6 +323,15 @@ def s_dpd():
 def s_dpd_recovered():
     ctl = app.controller
     check("Daemon hat selbst neu verbunden", ctl.code == A.CONNECTED, ctl.code)
+    raw.request("GET", "/disconnect")  # wie "hidemectl disconnect"
+
+
+@step(2000)
+def s_external_disconnect():
+    ctl = app.controller
+    check("Fremdes Trennen erkannt – keine automatische Neuverbindung",
+          not ctl.want_connected and ctl.reconnect_at is None and ctl.code == A.ROUTED,
+          f"want={ctl.want_connected} at={ctl.reconnect_at} code={ctl.code}")
     app.window.show_tools()
 
 
@@ -330,6 +350,21 @@ def s_disconnected():
     check("Getrennt (destroy → clean)", ctl.code == A.CLEAN, ctl.code)
     check("Kein Auto-Reconnect nach manuellem Trennen", ctl.reconnect_at is None and not ctl.want_connected)
     shot(app.window, "14-getrennt")
+    app.controller.connect_vpn("amsterdam")
+    app.controller.disconnect_vpn()  # sofort "Abbrechen"
+
+
+@step(400)
+def s_cancel_pending():
+    check("Abbruch vorgemerkt", app.controller.cancel_requested and app.controller.busy == "connect",
+          f"cancel={app.controller.cancel_requested} busy={app.controller.busy}")
+
+
+@step(4000)
+def s_cancelled():
+    ctl = app.controller
+    check("Nach Abbruch getrennt", ctl.code == A.CLEAN and not ctl.want_connected and not ctl.cancel_requested,
+          f"{ctl.code} want={ctl.want_connected} cancel={ctl.cancel_requested}")
     app.settings["block_after_disconnect"] = True
     app.controller.connect_vpn("amsterdam")
 
@@ -363,6 +398,8 @@ def s_fail():
     ctl = app.controller
     check("Verbindungsfehler gemeldet", ctl.last_error and "no such host" in ctl.last_error, str(ctl.last_error))
     check("Kein Auto-Reconnect nach manuellem Fehlversuch", not ctl.want_connected)
+    check("Nach Fehlversuch nicht blockiert (wieder clean)", ctl.code == A.CLEAN and ctl.phase() == "disconnected",
+          f"{ctl.code} {ctl.phase()}")
     shot(app.window, "16-fehler")
     app.controller.logout()
 
@@ -370,6 +407,16 @@ def s_fail():
 @step(1500)
 def s_logout():
     check("Abgemeldet", app.controller.has_token is False)
+    # Zum Schluss (Größenänderungen bringen die Broadway-Testanzeige gelegentlich zum Absturz):
+    # schmale Ansicht mit aktivem Breakpoint
+    app.window.set_default_size(360, 700)
+
+
+@step(2500)
+def s_narrow():
+    min_width = app.window.get_content().measure(Gtk.Orientation.HORIZONTAL, -1)[0]
+    check("Fenster lässt sich auf 360 px verkleinern", app.window.get_width() <= 360 and min_width <= 360,
+          f"Fensterbreite {app.window.get_width()} px, Mindestbreite Inhalt {min_width} px")
     app.quit_app()
 
 
